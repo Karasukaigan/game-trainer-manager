@@ -16,7 +16,7 @@
 - 轻量化
 - 免费和开源
 
-![screenshot](app/resources/screenshot_en.png)
+![screenshot](app/resources/screenshot_zh.png)
 
 ## 安装方法
 
