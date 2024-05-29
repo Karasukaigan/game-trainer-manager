@@ -28,7 +28,7 @@
 2. **克隆存储库并在本地运行：**
    - 将存储库克隆到本地机器：
      ```bash
-     git clone https://github.com/your-repo/game-trainer-manager.git
+     git clone https://github.com/Karasukaigan/game-trainer-manager.git
      ```
    - 导航到项目根目录并运行以下命令：
 
