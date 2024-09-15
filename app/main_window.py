@@ -23,6 +23,7 @@ class MainWindow(QMainWindow):
         self.names_data = read_csv(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', "game_names_merged.csv"))
         self.trainers_data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', 'trainers_list.csv')
         self.trainers_old_data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', 'trainers_list_old.csv')
+        self.abbreviation = self.read_abbreviation_from_csv(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', "abbreviation.csv"))
         
         self.initUI()
         self.loadTrainers()
@@ -196,7 +197,7 @@ class MainWindow(QMainWindow):
                             }
                         else:
                             trainer_dict = {
-                                'game_name': row[0],
+                                'game_name': row[0] + '(Archive)',
                                 'trainer_name': row[1],
                                 'trainer_url': '',
                                 'download_url': row[2]
@@ -222,16 +223,41 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
 
+    
+    def read_abbreviation_from_csv(self, file_path):
+        abbreviation = {}
+        with open(file_path, 'r', encoding='utf-8') as csvfile:
+            reader = csv.reader(csvfile)
+            next(reader)
+            for row in reader:
+                abbreviation[row[0]] = row[1]
+        return abbreviation
+
     def onLineEdit2TextChanged(self, text):
         global trainers_data
         self.listWidgetRight.clear()
         try:
             if text.strip():
+                search_text = [text.lower().replace(":", "")]
+                if search_text[0] in self.abbreviation:
+                    search_text[0] = self.abbreviation[search_text[0]].lower().replace(":", "")
+                if re.search(r'[\u4e00-\u9fff]', text) and len(text) >= 2:
+                    similar_games = sorted(self.names_data, key=lambda x: (
+                        similarity(search_text[0].replace("：", ""), x['zh_name'].lower().replace(":", "").replace("：", ""))
+                    ), reverse=True)
+                    for i in range(15):
+                        game = similar_games[i]
+                        if any(search_text[0].replace("：", "") in game[key].lower().replace(":", "").replace("：", "") for key in ['zh_name']):
+                            search_text.append(game['en_name'].lower().replace(":", ""))
+                existing_games = []
                 for trainer in trainers_data:
-                    game_name = trainer['game_name']
-                    sim = similarity(text, game_name)
-                    if sim > 0.8 or text.lower() in game_name.lower():
-                        self.listWidgetRight.addItem(game_name)
+                    for this_text in search_text:
+                        game_name = trainer['game_name']
+                        sim = similarity(this_text, game_name.lower().replace(":", ""))
+                        if sim > 0.8 or this_text in game_name.lower():
+                            if game_name not in existing_games:
+                                existing_games.append(game_name)
+                                self.listWidgetRight.addItem(game_name)
             else:
                 self.listWidgetRight.clear()
         except Exception as e:
@@ -252,19 +278,16 @@ class MainWindow(QMainWindow):
 
         try:
             similar_games = sorted(self.names_data, key=lambda x: (
-                similarity(text, x['en_name']),
-                similarity(text, x['zh_name']),
-                similarity(text, x['ja_name'])
+                similarity(text.lower(), x['en_name'].lower()),
+                similarity(text.lower(), x['zh_name'].lower())
             ), reverse=True)
             
             for game in similar_games:
-                sim = [similarity(text, game[key]) for key in ['en_name', 'zh_name', 'ja_name']]
-                if max(sim) > 0.8 or any(text.lower() in game[key] for key in ['en_name', 'zh_name', 'ja_name']):
-                    game_name = game['zh_name'] or game['en_name'] or game['ja_name']
+                sim = [similarity(text, game[key]) for key in ['en_name', 'zh_name']]
+                if max(sim) > 0.8 or any(text.lower() in game[key].lower() for key in ['en_name', 'zh_name']):
+                    game_name = game['zh_name'] or game['en_name']
                     if game['en_name'] and game['en_name'] != game_name:
                         game_name += f" ({game['en_name']})"
-                    if game['ja_name'] and game['ja_name'] != game_name:
-                        game_name += f" ({game['ja_name']})"
                     self.listWidgetName.addItem(game_name)
             self.append_output_text(f"<span style='color:LightGreen;'>[success]</span> Query results have been obtained.")
         except Exception as e:
@@ -284,25 +307,12 @@ class MainWindow(QMainWindow):
 
         try:
             if msg_box.clickedButton() == btn_yes:
-                # game_trainers = fetch_game_trainers(self)
-                # game_trainers_old = fetch_game_trainers_old(self)
-                # game_names_old = {trainer['game_name'] for trainer in game_trainers_old}
-                # n = 0
-                # for trainer in game_trainers:
-                #     n += 1
-                #     if trainer["game_name"] not in game_names_old:
-                #         time.sleep(0.5)
-                #         trainer["download_url"] = fetch_download_url(trainer["trainer_url"])
-                #         game_trainers_old.append(trainer)
-                #         self.append_output_text(f"({n}/{len(game_trainers)})<span style='color:yellow;'>[add]</span> {trainer})")
-                #     # else:
-                #     #     self.append_output_text(f"({n}/{len(game_trainers)})<span style='color:red;'>[existed]</span> {trainer})")
-                # save_list_to_csv(self.trainers_data_path, game_trainers_old)
-
                 trainers_list_url = "https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/trainers_list.csv"
                 trainers_list_local_filename = "app/resources/trainers_list.csv"
                 game_names_url = "https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/game_names_merged.csv"
                 game_names_local_filename = "app/resources/game_names_merged.csv"
+                abbreviation_url = "https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/abbreviation.csv"
+                abbreviation_local_filename = "app/resources/abbreviation.csv"
                 try:
                     self.append_output_text(f"<span style='color:yellow;'>[download]</span> {trainers_list_url}")
                     response = requests.get(trainers_list_url, timeout=10)

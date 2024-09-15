@@ -20,7 +20,6 @@ class CustomNameListWidget(QListWidget):
             menu = QMenu(self)
             copy_zh_name_action = menu.addAction(self.tr("复制中文名"))
             copy_en_name_action = menu.addAction(self.tr("复制英文名"))
-            copy_ja_name_action = menu.addAction(self.tr("复制日文名"))
 
             action = menu.exec(self.mapToGlobal(event.pos()))
 
@@ -28,8 +27,6 @@ class CustomNameListWidget(QListWidget):
                 self.copy_name_to_clipboard("zh_name", item)
             elif action == copy_en_name_action:
                 self.copy_name_to_clipboard("en_name", item)
-            elif action == copy_ja_name_action:
-                self.copy_name_to_clipboard("ja_name", item)
 
     def copy_name_to_clipboard(self, name_key, item):
         game_names = item.text().split(' (')
@@ -39,8 +36,6 @@ class CustomNameListWidget(QListWidget):
             if name_key == 'zh_name' and contains_chinese(game_name) and not contains_japanese(game_name):
                 name_copy = game_name
             elif name_key == 'en_name' and not contains_chinese(game_name) and not contains_japanese(game_name):
-                name_copy = game_name
-            elif name_key == 'ja_name' and contains_japanese(game_name):
                 name_copy = game_name
         clipboard = QGuiApplication.clipboard()
         clipboard.setText(name_copy)
