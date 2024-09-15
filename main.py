@@ -7,7 +7,12 @@ from app.config import *
 def main():
     app = QApplication(sys.argv)
     
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "app", "stylesheets", "main.qss"), "r") as file:
+    if themeStyle == "dark":
+        qss_file = 'main_dark.qss'
+    else:
+        qss_file = 'main_light.qss'
+
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "app", "stylesheets", qss_file), "r") as file:
         app.setStyleSheet(file.read())
 
     load_translation()

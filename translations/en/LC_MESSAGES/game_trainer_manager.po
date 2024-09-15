@@ -28,7 +28,7 @@ msgid "更新修改器列表"
 msgstr "Update Trainers List"
 
 msgid "打开修改器列表"
-msgstr "Open Trainers List.csv"
+msgstr "Open Trainers List"
 
 msgid "打开旧修改器列表"
 msgstr "Open Old Trainers List"
@@ -76,15 +76,10 @@ msgid "隐藏查找翻译"
 msgstr "Hide Translation Finder"
 
 msgid ""
-"<p>是否要更新trainers_list.csv文件？<span style=\"color:red;\">此操作不可逆。"
-"</span></p><p>trainers_list.csv文件被用来储存与修改器相关的信息，其中也包括修"
-"改器的下载链接。你也可以通过手动修改trainers_list.csv文件中的数据来完善一些修"
-"改器的信息，但请注意数据格式是否正确，<span style=\"color:red;\">错误的数据格"
-"式会导致程序报错。</span></p><p>更新需要一些时间，画面可能会卡住，请耐心等"
-"待。</span></p>"
+"<p>是否要更新修改器列表？</p><p>trainers_list.csv文件被用来储存与修改器相关的信息，其中也包括修改器的下载链接。你也可以通过手动修改trainers_list.csv文件中的数据来完善一些修改器的信息，但请注意数据格式是否正确。</p><p>更新需要一些时间，画面可能会卡住，请耐心等待。</span></p>"
 msgstr ""
-"<p>Do you want to update the trainers_list.csv file? <span style=\"color:red;\">This action is irreversible.</span></p>"
-"<p>The trainers_list.csv file is used to store information related to trainers, including download links for the trainers. You can also manually modify the data in the trainers_list.csv file to improve some information about trainers, but please ensure the data format is correct. <span style=\"color:red;\">Incorrect data format will cause program errors.</span></p>"
+"<p>Do you want to update the trainers list file?</p>"
+"<p>The trainers_list.csv file is used to store information related to trainers, including download links for the trainers. You can also manually modify the data in the trainers_list.csv file to improve some information about trainers, but please ensure the data format is correct.</p>"
 "<p>The update will take some time, and the screen may freeze. Please be patient.</p>"
 
 msgid "确定"
@@ -197,3 +192,9 @@ msgstr "Are you sure you want to delete"
 
 msgid "此操作不可逆！"
 msgstr "This action is irreversible!"
+
+msgid "设置"
+msgstr "Settings"
+
+msgid "切换主题"
+msgstr "Switch Theme"

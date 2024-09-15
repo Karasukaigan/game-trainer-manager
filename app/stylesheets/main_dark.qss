@@ -39,6 +39,11 @@ QMenu::item:selected {
     background: #404040;
 }
 
+QMenu::separator {
+    height: 1px;
+    background-color: #3a3a3a;
+}
+
 /* QLineEdit */
 QLineEdit {
     background-color: #2e2e2e;
@@ -197,4 +202,11 @@ QScrollBar::sub-line:horizontal {
 QScrollBar::add-page:horizontal, 
 QScrollBar::sub-page:horizontal {
     background: none;
+}
+
+QScrollArea {
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    font-size: 14px;
+    border: none;
 }

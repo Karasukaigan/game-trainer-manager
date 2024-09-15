@@ -8,5 +8,6 @@ version_number = config.get('settings', 'versionNumber').upper()
 isFirstStart = config.get('settings', 'isFirstStart')
 trainersPath = config.get('settings', 'trainersPath')
 enableEnglishUI = config.get('settings', 'enableEnglishUI')
+themeStyle = config.get('settings', 'themestyle')
 
 trainers_data = []

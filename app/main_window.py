@@ -42,24 +42,18 @@ class MainWindow(QMainWindow):
         importAction = fileMenu.addAction(self.tr("从本地导入修改器"))
         importZipAction = fileMenu.addAction(self.tr("从压缩包导入修改器"))
         openDirAction = fileMenu.addAction(self.tr("打开修改器目录"))
-        separator = QAction(self)
-        separator.setSeparator(True)
-        fileMenu.addAction(separator)
+        fileMenu.addSeparator()
         updateAction = fileMenu.addAction(self.tr("更新修改器列表"))
         openListAction = fileMenu.addAction(self.tr("打开修改器列表"))
         openOldListAction = fileMenu.addAction(self.tr("打开旧修改器列表"))
-        separator_2 = QAction(self)
-        separator_2.setSeparator(True)
-        fileMenu.addAction(separator_2)
-        switchUIAction = fileMenu.addAction("Switch to English")
         updateAction.triggered.connect(self.updateData)
         importAction.triggered.connect(self.importFiles)
         openDirAction.triggered.connect(self.openDirectory)
         importZipAction.triggered.connect(self.importZipFiles)
         openListAction.triggered.connect(lambda: self.openCsvFile(self.trainers_data_path))
         openOldListAction.triggered.connect(lambda: self.openCsvFile(self.trainers_old_data_path))
-        switchUIAction.triggered.connect(self.switchUI)
         menuBar.addMenu(fileMenu)
+
         toolsMenu = QMenu(self.tr("工具"), self)
         downloadToolAction = QAction(self.tr("隐藏下载器"), self)
         downloadToolAction.triggered.connect(self.downloadTool)
@@ -67,15 +61,23 @@ class MainWindow(QMainWindow):
         toggleTranslationSearchAction = QAction(self.tr("查找翻译"), self)
         toggleTranslationSearchAction.triggered.connect(self.toggleTranslationSearch)
         toolsMenu.addAction(toggleTranslationSearchAction)
-        toolsMenu.addAction(separator)
+        toolsMenu.addSeparator()
         translationFileNameAction = QAction(self.tr("翻译修改器文件名"), self)
         translationFileNameAction.triggered.connect(self.translationFileName)
         toolsMenu.addAction(translationFileNameAction)
         menuBar.addMenu(toolsMenu)
+
+        setMenu = QMenu(self.tr("设置"), self)
+        switchThemeAction = setMenu.addAction(self.tr("切换主题"))
+        switchUIAction = setMenu.addAction("Switch to English")
+        switchUIAction.triggered.connect(self.switchUI)
+        switchThemeAction.triggered.connect(self.switchTheme)
+        menuBar.addMenu(setMenu)
+
         helpMenu = QMenu(self.tr("帮助"), self)
         openFLiNGAction = helpMenu.addAction(self.tr("打开风灵月影官网"))
         openArchiveLinkAction = helpMenu.addAction(self.tr("打开旧修改器列表(2012~2019.05)"))
-        helpMenu.addAction(separator)
+        helpMenu.addSeparator()
         openGithubAction = helpMenu.addAction(self.tr("打开GitHub项目页面"))
         aboutAction = helpMenu.addAction(self.tr("关于"))
         openFLiNGAction.triggered.connect(lambda: self.openUrl("https://flingtrainer.com/all-trainers-a-z/"))
@@ -322,12 +324,22 @@ class MainWindow(QMainWindow):
                         self.append_output_text(f"<span style='color:yellow;'>[save]</span> Download successful : {trainers_list_local_filename}")
                     else:
                         self.append_output_text(f"<span style='color:red;'>[error]</span> Download failed : {response.status_code}")
+
                     self.append_output_text(f"<span style='color:yellow;'>[download]</span> {game_names_url}")
                     response = requests.get(game_names_url, timeout=10)
                     if response.status_code == 200:
                         with open(game_names_local_filename, 'wb') as f:
                             f.write(response.content)
                         self.append_output_text(f"<span style='color:yellow;'>[save]</span> Download successful : {game_names_local_filename}")
+                    else:
+                        self.append_output_text(f"<span style='color:red;'>[error]</span> Download failed : {response.status_code}")
+
+                    self.append_output_text(f"<span style='color:yellow;'>[download]</span> {abbreviation_url}")
+                    response = requests.get(abbreviation_url, timeout=10)
+                    if response.status_code == 200:
+                        with open(abbreviation_local_filename, 'wb') as f:
+                            f.write(response.content)
+                        self.append_output_text(f"<span style='color:yellow;'>[save]</span> Download successful : {abbreviation_local_filename}")
                     else:
                         self.append_output_text(f"<span style='color:red;'>[error]</span> Download failed : {response.status_code}")
                 except requests.exceptions.RequestException as e:
@@ -434,6 +446,15 @@ class MainWindow(QMainWindow):
         with open(self.config_path, 'w') as configfile:
             config.write(configfile)
         os.execl(sys.executable, sys.executable, *sys.argv)
+        
+    def switchTheme(self):
+        if themeStyle == "dark":
+            config.set('settings', 'themestyle', 'light')
+        else:
+            config.set('settings', 'themestyle', 'dark')
+        with open(self.config_path, 'w') as configfile:
+            config.write(configfile)
+        os.execl(sys.executable, sys.executable, *sys.argv)
 
     def downloadTool(self):
         action = self.sender()
@@ -526,16 +547,7 @@ class MainWindow(QMainWindow):
         label.setWordWrap(True)
         scroll_area.setWidget(label)
         scroll_area.setStyleSheet('''
-            QScrollArea {
-                background-color: #1e1e1e;
-                color: #d4d4d4;
-                font-size: 14px;
-                border: none;
-            }
             QLabel {
-                background-color: #1e1e1e;
-                color: #d4d4d4;
-                font-size: 14px;
                 padding: 0;
                 border: none;
             }
