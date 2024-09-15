@@ -9,6 +9,9 @@ from app.widgets.download_list import *
 from app.widgets.name_list import *
 import csv, shutil, sys, time
 import zipfile, rarfile
+from retrying import retry
+import requests
+from bs4 import BeautifulSoup
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -150,7 +153,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f'Game Trainer Manager {version_number}')
         self.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', 'logo.png')))
 
-        self.output_text_edit.appendHtml(f"<span style='color:LightGreen;'>[info]</span> The main window has been loaded.")
+        self.append_output_text(f"<span style='color:LightGreen;'>[info]</span> The main window has been loaded.")
         
         if isFirstStart == 'true':
             self.showAboutDialog()
@@ -172,9 +175,9 @@ class MainWindow(QMainWindow):
                         full_path = os.path.join(root, file)
                         self.trainers.append(full_path)
                         self.listWidgetLeft.addItem(file.split('.exe')[0])
-            self.output_text_edit.appendHtml(f"<span style='color:LightGreen;'>[info]</span> The list of trainers has been loaded.")
+            self.append_output_text(f"<span style='color:LightGreen;'>[info]</span> The list of trainers has been loaded.")
         except Exception as e:
-            self.output_text_edit.appendHtml(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
 
     def getTrainersData(self):
         global trainers_data
@@ -199,9 +202,9 @@ class MainWindow(QMainWindow):
                                 'download_url': row[2]
                             }
                         trainers_data.append(trainer_dict)
-            self.output_text_edit.appendHtml(f"<span style='color:LightGreen;'>[info]</span> Data for all trainers has been loaded.")
+            self.append_output_text(f"<span style='color:LightGreen;'>[info]</span> Data for all trainers has been loaded.")
         except Exception as e:
-            self.output_text_edit.appendHtml(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
     
     def onLineEdit1TextChanged(self, text):
         self.listWidgetLeft.clear()
@@ -217,7 +220,7 @@ class MainWindow(QMainWindow):
             else:
                 self.loadTrainers()
         except Exception as e:
-            self.output_text_edit.appendHtml(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
 
     def onLineEdit2TextChanged(self, text):
         global trainers_data
@@ -232,7 +235,7 @@ class MainWindow(QMainWindow):
             else:
                 self.listWidgetRight.clear()
         except Exception as e:
-            self.output_text_edit.appendHtml(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
 
     def lineEdit3_keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:
@@ -263,16 +266,16 @@ class MainWindow(QMainWindow):
                     if game['ja_name'] and game['ja_name'] != game_name:
                         game_name += f" ({game['ja_name']})"
                     self.listWidgetName.addItem(game_name)
-            self.output_text_edit.appendHtml(f"<span style='color:LightGreen;'>[success]</span> Query results have been obtained.")
+            self.append_output_text(f"<span style='color:LightGreen;'>[success]</span> Query results have been obtained.")
         except Exception as e:
-            self.output_text_edit.appendHtml(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
 
     def updateData(self):
         global trainers_data
 
         msg_box = QMessageBox(self)
-        msg_box.setWindowTitle(self.tr('更新trainers_list.csv'))
-        msg_text = self.tr('<p>是否要更新trainers_list.csv文件？<span style="color:red;">此操作不可逆。</span></p><p>trainers_list.csv文件被用来储存与修改器相关的信息，其中也包括修改器的下载链接。你也可以通过手动修改trainers_list.csv文件中的数据来完善一些修改器的信息，但请注意数据格式是否正确，<span style="color:red;">错误的数据格式会导致程序报错。</span></p><p>更新需要一些时间，画面可能会卡住，请耐心等待。</span></p>')
+        msg_box.setWindowTitle(self.tr('更新修改器列表'))
+        msg_text = self.tr('<p>是否要更新修改器列表？</p><p>trainers_list.csv文件被用来储存与修改器相关的信息，其中也包括修改器的下载链接。你也可以通过手动修改trainers_list.csv文件中的数据来完善一些修改器的信息，但请注意数据格式是否正确。</p><p>更新需要一些时间，画面可能会卡住，请耐心等待。</span></p>')
         msg_box.setText(msg_text)
         btn_yes = msg_box.addButton(self.tr('确定'), QMessageBox.ButtonRole.AcceptRole)
         btn_no = msg_box.addButton(self.tr('取消'), QMessageBox.ButtonRole.RejectRole)
@@ -281,26 +284,51 @@ class MainWindow(QMainWindow):
 
         try:
             if msg_box.clickedButton() == btn_yes:
-                game_trainers = fetch_game_trainers(self)
-                game_trainers_old = fetch_game_trainers_old(self)
-                game_names_old = {trainer['game_name'] for trainer in game_trainers_old}
-                n = 0
-                for trainer in game_trainers:
-                    n += 1
-                    if trainer["game_name"] not in game_names_old:
-                        time.sleep(0.5)
-                        trainer["download_url"] = fetch_download_url(trainer["trainer_url"])
-                        game_trainers_old.append(trainer)
-                        self.output_text_edit.appendHtml(f"({n}/{len(game_trainers)})<span style='color:yellow;'>[add]</span> {trainer})")
+                # game_trainers = fetch_game_trainers(self)
+                # game_trainers_old = fetch_game_trainers_old(self)
+                # game_names_old = {trainer['game_name'] for trainer in game_trainers_old}
+                # n = 0
+                # for trainer in game_trainers:
+                #     n += 1
+                #     if trainer["game_name"] not in game_names_old:
+                #         time.sleep(0.5)
+                #         trainer["download_url"] = fetch_download_url(trainer["trainer_url"])
+                #         game_trainers_old.append(trainer)
+                #         self.append_output_text(f"({n}/{len(game_trainers)})<span style='color:yellow;'>[add]</span> {trainer})")
+                #     # else:
+                #     #     self.append_output_text(f"({n}/{len(game_trainers)})<span style='color:red;'>[existed]</span> {trainer})")
+                # save_list_to_csv(self.trainers_data_path, game_trainers_old)
+
+                trainers_list_url = "https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/trainers_list.csv"
+                trainers_list_local_filename = "app/resources/trainers_list.csv"
+                game_names_url = "https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/game_names_merged.csv"
+                game_names_local_filename = "app/resources/game_names_merged.csv"
+                try:
+                    self.append_output_text(f"<span style='color:yellow;'>[download]</span> {trainers_list_url}")
+                    response = requests.get(trainers_list_url, timeout=10)
+                    if response.status_code == 200:
+                        with open(trainers_list_local_filename, 'wb') as f:
+                            f.write(response.content)
+                        self.append_output_text(f"<span style='color:yellow;'>[save]</span> Download successful : {trainers_list_local_filename}")
                     else:
-                        self.output_text_edit.appendHtml(f"({n}/{len(game_trainers)})<span style='color:red;'>[existed]</span> {trainer})")
-                save_list_to_csv(self.trainers_data_path, game_trainers_old)
+                        self.append_output_text(f"<span style='color:red;'>[error]</span> Download failed : {response.status_code}")
+                    self.append_output_text(f"<span style='color:yellow;'>[download]</span> {game_names_url}")
+                    response = requests.get(game_names_url, timeout=10)
+                    if response.status_code == 200:
+                        with open(game_names_local_filename, 'wb') as f:
+                            f.write(response.content)
+                        self.append_output_text(f"<span style='color:yellow;'>[save]</span> Download successful : {game_names_local_filename}")
+                    else:
+                        self.append_output_text(f"<span style='color:red;'>[error]</span> Download failed : {response.status_code}")
+                except requests.exceptions.RequestException as e:
+                    self.append_output_text(f"<span style='color:red;'>[error]</span> Network request error : {str(e)}")
+
                 trainers_data = []
                 self.getTrainersData()
-                self.output_text_edit.appendHtml(f"<span style='color:LightGreen;'>[success]</span> Data related to the trainers has been updated!")
+                self.append_output_text(f"<span style='color:LightGreen;'>[success]</span> Data related to the trainers has been updated!")
                 QMessageBox.information(self, self.tr("更新成功"), self.tr("修改器相关数据更新完成！"))
         except Exception as e:
-            self.output_text_edit.appendHtml(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
 
     def importFiles(self):
         try:
@@ -317,23 +345,23 @@ class MainWindow(QMainWindow):
                     target_path = os.path.join(target_dir, file_name)
                     try:
                         shutil.copy(file_path, target_path)
-                        self.output_text_edit.appendHtml(f"<span style='color:green;'>[import]</span> {target_path}")
+                        self.append_output_text(f"<span style='color:green;'>[import]</span> {target_path}")
                     except Exception as e:
-                        self.output_text_edit.appendHtml(f"<span style='color:red;'>[error]</span> Failed to copy file '{file_name}': {str(e)}")
+                        self.append_output_text(f"<span style='color:red;'>[error]</span> Failed to copy file '{file_name}': {str(e)}")
                 self.loadTrainers()
-                self.output_text_edit.appendHtml(f"<span style='color:LightGreen;'>[success]</span> File imported successfully!")
+                self.append_output_text(f"<span style='color:LightGreen;'>[success]</span> File imported successfully!")
         except Exception as e:
-            self.output_text_edit.appendHtml(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
 
     def openDirectory(self):
         try:
             if os.path.exists(self.trainersPath) and os.path.isdir(self.trainersPath):
                 os.startfile(self.trainersPath)
-                self.output_text_edit.appendHtml(f"<span style='color:LightSkyBlue;'>[open]</span> {self.trainersPath}")
+                self.append_output_text(f"<span style='color:LightSkyBlue;'>[open]</span> {self.trainersPath}")
             else:
-                self.output_text_edit.appendHtml(f"<span style='color:red;'>[error]</span> '{self.trainersPath}' does not exist.")
+                self.append_output_text(f"<span style='color:red;'>[error]</span> '{self.trainersPath}' does not exist.")
         except Exception as e:
-            self.output_text_edit.appendHtml(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
 
     def importZipFiles(self):
         files, _ = QFileDialog.getOpenFileNames(self, self.tr("选择压缩包文件"), "", self.tr("压缩包 (*.zip *.rar)"))
@@ -355,20 +383,20 @@ class MainWindow(QMainWindow):
                         with rarfile.RarFile(fileName, 'r') as rar_ref:
                             rar_ref.extractall(cache_dir)
                     else:
-                        self.output_text_edit.appendHtml(f"<span style='color:red;'>[error]</span> File format error.")
+                        self.append_output_text(f"<span style='color:red;'>[error]</span> File format error.")
                         return
 
                 for root, dirs, files in os.walk(cache_dir):
                     for file in files:
                         if file.endswith('.exe'):
                             os.rename(os.path.join(root, file), os.path.join(trainers_dir, file))
-                            self.output_text_edit.appendHtml(f"<span style='color:green;'>[import]</span> {os.path.join(trainers_dir, file)}")
+                            self.append_output_text(f"<span style='color:green;'>[import]</span> {os.path.join(trainers_dir, file)}")
 
                 QMessageBox.information(self, self.tr("导入成功"), self.tr("<p>已从选择的压缩包导入修改器！</p><p><span style='color:red;'>但请注意，有些修改器可能需要额外的文件才能正确运行。</span></p>"))
-                self.output_text_edit.appendHtml(f"<span style='color:LightGreen;'>[success]</span> File imported successfully!")
+                self.append_output_text(f"<span style='color:LightGreen;'>[success]</span> File imported successfully!")
                 self.loadTrainers()
             except Exception as e:
-                self.output_text_edit.appendHtml(f"<span style='color:red;'>[error]</span> An error occurred while processing the archive: {str(e)}")
+                self.append_output_text(f"<span style='color:red;'>[error]</span> An error occurred while processing the archive: {str(e)}")
                 QMessageBox.critical(self, self.tr("错误"), self.tr("处理压缩包时出现错误") + f": {e}")
             finally:
                 for root, dirs, files in os.walk(cache_dir):
@@ -380,12 +408,12 @@ class MainWindow(QMainWindow):
     def openCsvFile(self, file_path):
         try:
             if os.path.exists(file_path):
-                self.output_text_edit.appendHtml(f"<span style='color:LightSkyBlue;'>[open]</span> {file_path}")
+                self.append_output_text(f"<span style='color:LightSkyBlue;'>[open]</span> {file_path}")
                 QProcess.startDetached('notepad', [file_path]) 
             else:
-                self.output_text_edit.appendHtml(f"<span style='color:red;'>[error]</span> '{file_path}' cannot be found.")
+                self.append_output_text(f"<span style='color:red;'>[error]</span> '{file_path}' cannot be found.")
         except Exception as e:
-            self.output_text_edit.appendHtml(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
 
     def switchUI(self):
         action = self.sender()
@@ -455,12 +483,12 @@ class MainWindow(QMainWindow):
                             new_file_name = f"{best_match['zh_name']}{name_suffix}.exe"
                             new_file_path = os.path.join(self.trainersPath, new_file_name)
                             os.rename(file_path, new_file_path)
-                            self.output_text_edit.appendHtml(f"<span style='color:LightSkyBlue;'>[rename]</span> '{file_name}' -> '{new_file_name}'")
+                            self.append_output_text(f"<span style='color:LightSkyBlue;'>[rename]</span> '{file_name}' -> '{new_file_name}'")
                         else:
-                            self.output_text_edit.appendHtml(f"<span style='color:red;'>[rename]</span> No match found for '{file_name}'")
-                self.output_text_edit.appendHtml(f"<span style='color:LightGreen;'>[success]</span> File names translation completed!")
+                            self.append_output_text(f"<span style='color:red;'>[rename]</span> No match found for '{file_name}'")
+                self.append_output_text(f"<span style='color:LightGreen;'>[success]</span> File names translation completed!")
         except Exception as e:
-            self.output_text_edit.appendHtml(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
         finally:
             self.loadTrainers()
 
@@ -509,9 +537,9 @@ class MainWindow(QMainWindow):
     def openUrl(self, url):
         try:
             webbrowser.open(url)
-            self.output_text_edit.appendHtml(f"<span style='color:LightSkyBlue;'>[open]</span> {url}")
+            self.append_output_text(f"<span style='color:LightSkyBlue;'>[open]</span> {url}")
         except Exception as e:
-            self.output_text_edit.appendHtml(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
 
     def append_output_text(self, text):
         self.output_text_edit.appendHtml(text)
