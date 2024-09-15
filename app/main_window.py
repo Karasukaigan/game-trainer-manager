@@ -310,11 +310,11 @@ class MainWindow(QMainWindow):
         try:
             if msg_box.clickedButton() == btn_yes:
                 trainers_list_url = "https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/trainers_list.csv"
-                trainers_list_local_filename = "app/resources/trainers_list.csv"
+                trainers_list_local_filename = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', "trainers_list.csv")
                 game_names_url = "https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/game_names_merged.csv"
-                game_names_local_filename = "app/resources/game_names_merged.csv"
+                game_names_local_filename = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', "game_names_merged.csv")
                 abbreviation_url = "https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/abbreviation.csv"
-                abbreviation_local_filename = "app/resources/abbreviation.csv"
+                abbreviation_local_filename = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', "abbreviation.csv")
                 try:
                     self.append_output_text(f"<span style='color:yellow;'>[download]</span> {trainers_list_url}")
                     response = requests.get(trainers_list_url, timeout=10)
