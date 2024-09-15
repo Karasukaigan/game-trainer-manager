@@ -24,14 +24,14 @@ msgstr "Import Trainers from Archive(.zip or .rar)"
 msgid "打开修改器目录"
 msgstr "Open Trainers Directory"
 
-msgid "更新trainers_list.csv"
-msgstr "Update trainers_list.csv"
+msgid "更新修改器列表"
+msgstr "Update Trainers List"
 
-msgid "打开trainers_list.csv"
-msgstr "Open trainers_list.csv"
+msgid "打开修改器列表"
+msgstr "Open Trainers List.csv"
 
-msgid "打开trainers_list_old.csv"
-msgstr "Open trainers_list_old.csv"
+msgid "打开旧修改器列表"
+msgstr "Open Old Trainers List"
 
 msgid "工具"
 msgstr "Tools"
