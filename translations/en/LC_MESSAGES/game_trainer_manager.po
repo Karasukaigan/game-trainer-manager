@@ -43,7 +43,7 @@ msgid "查找翻译"
 msgstr "Translation Finder"
 
 msgid "翻译修改器文件名"
-msgstr "Translate File Names to Chinese"
+msgstr "Translate Trainer File Names to Chinese"
 
 msgid "帮助"
 msgstr "Help"
@@ -198,3 +198,6 @@ msgstr "Settings"
 
 msgid "切换主题"
 msgstr "Switch Theme"
+
+msgid "打开Cheat Engine官网"
+msgstr "Open Cheat Engine Website"

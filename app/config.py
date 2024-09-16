@@ -9,5 +9,6 @@ isFirstStart = config.get('settings', 'isFirstStart')
 trainersPath = config.get('settings', 'trainersPath')
 enableEnglishUI = config.get('settings', 'enableEnglishUI')
 themeStyle = config.get('settings', 'themestyle')
+updateTime = config.get('settings', 'updatetime')
 
 trainers_data = []

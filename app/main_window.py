@@ -7,11 +7,11 @@ from app.utils.update_data import *
 from app.widgets.custom_list import *
 from app.widgets.download_list import *
 from app.widgets.name_list import *
-import csv, shutil, sys, time
+import csv, shutil, sys
 import zipfile, rarfile
 from retrying import retry
 import requests
-from bs4 import BeautifulSoup
+from datetime import datetime, timedelta
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -27,7 +27,27 @@ class MainWindow(QMainWindow):
         
         self.initUI()
         self.loadTrainers()
+        self.auto_update(updateTime)
         self.getTrainersData()
+
+    def auto_update(self, last_update_time):
+        last_update_datetime = datetime.strptime(last_update_time, "%Y-%m-%d")
+        current_date = datetime.now()
+        delta = current_date - last_update_datetime
+        if delta > timedelta(days=2):
+            self.append_output_text(f"<span style='color:red;'>[info]</span> More than two days have passed since {last_update_time}, an update is needed.")
+            try:
+                self.updateData(False)
+                config.set('settings', 'updatetime', current_date.strftime("%Y-%m-%d"))
+                with open(self.config_path, 'w') as configfile:
+                    config.write(configfile)
+                return current_date.strftime("%Y-%m-%d")
+            except Exception as e:
+                self.append_output_text(f"<span style='color:red;'>[error]</span> Automatic update failed : {e}")
+                return ""
+        else:
+            return ""
+
 
     def tr(self, text):
         try:
@@ -46,7 +66,7 @@ class MainWindow(QMainWindow):
         updateAction = fileMenu.addAction(self.tr("更新修改器列表"))
         openListAction = fileMenu.addAction(self.tr("打开修改器列表"))
         openOldListAction = fileMenu.addAction(self.tr("打开旧修改器列表"))
-        updateAction.triggered.connect(self.updateData)
+        updateAction.triggered.connect(lambda: self.updateData(True))
         importAction.triggered.connect(self.importFiles)
         openDirAction.triggered.connect(self.openDirectory)
         importZipAction.triggered.connect(self.importZipFiles)
@@ -77,11 +97,13 @@ class MainWindow(QMainWindow):
         helpMenu = QMenu(self.tr("帮助"), self)
         openFLiNGAction = helpMenu.addAction(self.tr("打开风灵月影官网"))
         openArchiveLinkAction = helpMenu.addAction(self.tr("打开旧修改器列表(2012~2019.05)"))
+        openCELinkAction = helpMenu.addAction(self.tr("打开Cheat Engine官网"))
         helpMenu.addSeparator()
         openGithubAction = helpMenu.addAction(self.tr("打开GitHub项目页面"))
         aboutAction = helpMenu.addAction(self.tr("关于"))
         openFLiNGAction.triggered.connect(lambda: self.openUrl("https://flingtrainer.com/all-trainers-a-z/"))
         openArchiveLinkAction.triggered.connect(lambda: self.openUrl("https://archive.flingtrainer.com/"))
+        openCELinkAction.triggered.connect(lambda: self.openUrl("https://www.cheatengine.org/"))
         aboutAction.triggered.connect(self.showAboutDialog)
         openGithubAction.triggered.connect(lambda: self.openUrl("https://github.com/Karasukaigan/game-trainer-manager"))
         menuBar.addMenu(helpMenu)
@@ -295,62 +317,46 @@ class MainWindow(QMainWindow):
         except Exception as e:
             self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
 
-    def updateData(self):
+    def updateData(self, need_confirm):
         global trainers_data
 
-        msg_box = QMessageBox(self)
-        msg_box.setWindowTitle(self.tr('更新修改器列表'))
-        msg_text = self.tr('<p>是否要更新修改器列表？</p><p>trainers_list.csv文件被用来储存与修改器相关的信息，其中也包括修改器的下载链接。你也可以通过手动修改trainers_list.csv文件中的数据来完善一些修改器的信息，但请注意数据格式是否正确。</p><p>更新需要一些时间，画面可能会卡住，请耐心等待。</span></p>')
-        msg_box.setText(msg_text)
-        btn_yes = msg_box.addButton(self.tr('确定'), QMessageBox.ButtonRole.AcceptRole)
-        btn_no = msg_box.addButton(self.tr('取消'), QMessageBox.ButtonRole.RejectRole)
-        msg_box.setDefaultButton(btn_no)
-        msg_box.exec()
+        if need_confirm:
+            msg_box = QMessageBox(self)
+            msg_box.setWindowTitle(self.tr('更新修改器列表'))
+            msg_text = self.tr('<p>是否要更新修改器列表？</p><p>trainers_list.csv文件被用来储存与修改器相关的信息，其中也包括修改器的下载链接。你也可以通过手动修改trainers_list.csv文件中的数据来完善一些修改器的信息，但请注意数据格式是否正确。</p><p>更新需要一些时间，画面可能会卡住，请耐心等待。</span></p>')
+            msg_box.setText(msg_text)
+            btn_yes = msg_box.addButton(self.tr('确定'), QMessageBox.ButtonRole.AcceptRole)
+            btn_no = msg_box.addButton(self.tr('取消'), QMessageBox.ButtonRole.RejectRole)
+            msg_box.setDefaultButton(btn_no)
+            msg_box.exec()
 
-        try:
-            if msg_box.clickedButton() == btn_yes:
-                trainers_list_url = "https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/trainers_list.csv"
-                trainers_list_local_filename = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', "trainers_list.csv")
-                game_names_url = "https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/game_names_merged.csv"
-                game_names_local_filename = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', "game_names_merged.csv")
-                abbreviation_url = "https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/abbreviation.csv"
-                abbreviation_local_filename = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', "abbreviation.csv")
+        if (need_confirm and msg_box.clickedButton() == btn_yes) or not need_confirm:
+            try:
+                base_url = 'https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/'
+                resources_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources')
+                downloads = ["trainers_list.csv", "game_names_merged.csv", "abbreviation.csv"]
                 try:
-                    self.append_output_text(f"<span style='color:yellow;'>[download]</span> {trainers_list_url}")
-                    response = requests.get(trainers_list_url, timeout=10)
-                    if response.status_code == 200:
-                        with open(trainers_list_local_filename, 'wb') as f:
-                            f.write(response.content)
-                        self.append_output_text(f"<span style='color:yellow;'>[save]</span> Download successful : {trainers_list_local_filename}")
-                    else:
-                        self.append_output_text(f"<span style='color:red;'>[error]</span> Download failed : {response.status_code}")
-
-                    self.append_output_text(f"<span style='color:yellow;'>[download]</span> {game_names_url}")
-                    response = requests.get(game_names_url, timeout=10)
-                    if response.status_code == 200:
-                        with open(game_names_local_filename, 'wb') as f:
-                            f.write(response.content)
-                        self.append_output_text(f"<span style='color:yellow;'>[save]</span> Download successful : {game_names_local_filename}")
-                    else:
-                        self.append_output_text(f"<span style='color:red;'>[error]</span> Download failed : {response.status_code}")
-
-                    self.append_output_text(f"<span style='color:yellow;'>[download]</span> {abbreviation_url}")
-                    response = requests.get(abbreviation_url, timeout=10)
-                    if response.status_code == 200:
-                        with open(abbreviation_local_filename, 'wb') as f:
-                            f.write(response.content)
-                        self.append_output_text(f"<span style='color:yellow;'>[save]</span> Download successful : {abbreviation_local_filename}")
-                    else:
-                        self.append_output_text(f"<span style='color:red;'>[error]</span> Download failed : {response.status_code}")
+                    for download in downloads:
+                        download_url = base_url + download
+                        local_filename = os.path.join(resources_path, download)
+                        self.append_output_text(f"<span style='color:yellow;'>[download]</span> {download_url}")
+                        response = requests.get(download_url, timeout=6)
+                        if response.status_code == 200:
+                            with open(local_filename, 'wb') as f:
+                                f.write(response.content)
+                            self.append_output_text(f"<span style='color:yellow;'>[save]</span> Download successful : {local_filename}")
+                        else:
+                            self.append_output_text(f"<span style='color:red;'>[error]</span> Download failed : {response.status_code}")
                 except requests.exceptions.RequestException as e:
                     self.append_output_text(f"<span style='color:red;'>[error]</span> Network request error : {str(e)}")
 
                 trainers_data = []
                 self.getTrainersData()
                 self.append_output_text(f"<span style='color:LightGreen;'>[success]</span> Data related to the trainers has been updated!")
-                QMessageBox.information(self, self.tr("更新成功"), self.tr("修改器相关数据更新完成！"))
-        except Exception as e:
-            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+                if need_confirm:
+                    QMessageBox.information(self, self.tr("更新成功"), self.tr("修改器相关数据更新完成！")) 
+            except Exception as e:
+                self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
 
     def importFiles(self):
         try:
