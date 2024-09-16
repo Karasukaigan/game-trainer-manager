@@ -46,13 +46,21 @@
      python .\main.py
      ```
 
-## 主要技术栈
+## 更新方式
 
-- **PyQt6**：用于构建GUI框架。
-- **requests + retrying + beautifulsoup4**：用于获取更新。
-- **gettext**：用于实现多语言的UI页面。
-- **PyInstaller**：用于将Python程序打包成可执行文件。
-- **Inno Setup**：用于制作安装包。
+一共有三个文件需要经常更新：  
+
+- trainers_list.csv  
+- game_names_merged.csv  
+- abbreviation.csv  
+
+这三个文件被放在`app/resources`目录里，`trainers_list.csv`记录了修改器的相关信息，`game_names_merged.csv`里记录了游戏的英文名和中文译名，`abbreviation.csv`里记录了游戏的名称简写或别名。  
+
+您有两种可选的更新方式：  
+
+1. **自动更新**：`config.ini`里记录了上次更新的时间，如果超过2天没有更新，应用程序会在启动时更新上面3个文件。  
+
+2. **手动更新**：网络不佳时自动更新可能会失败，此时需要在网络改善后点击菜单栏的 **文件** > **更新修改器列表** 来进行更新。  
 
 ## 调试模式
 
@@ -64,7 +72,11 @@ debugmode = false
 ```
 debugmode = true
 ```
-即可打开调试模式。  
+即可打开调试模式。
+
+## 关于正式版本
+
+Game Trainer Manager的正式版已移除测试版中的爬虫功能，因此不会对FLiNG Trainer的服务器造成额外负担。用户在下载修改器时，该软件将使用默认浏览器打开下载链接，而不是直接通过程序发起请求。在搜索修改器时，用户将依赖于本地数据，无需连接网络。
 
 ## 免责声明
 

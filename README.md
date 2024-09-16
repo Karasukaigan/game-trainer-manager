@@ -44,13 +44,21 @@ You can download the software in two ways:
      python .\main.py
      ```
 
-## Main Technology Stack
+## Update Methods
 
-- **PyQt6**: Used to build the GUI framework.
-- **requests + retrying + beautifulsoup4**: Used for updating.
-- **gettext**: Used to implement multi-language UI pages.
-- **PyInstaller**: Used to package Python programs into executable files.
-- **Inno Setup**: Used for creating installation packages.
+There are three files that need to be updated frequently:
+
+- trainers_list.csv
+- game_names_merged.csv
+- abbreviation.csv
+
+These three files are located in the `app/resources` directory. The `trainers_list.csv` records information related to the trainers, `game_names_merged.csv` records the English and Chinese names of the games, and `abbreviation.csv` records the abbreviations or aliases of the game names.
+
+You have two optional update methods:
+
+1. **Automatic Update**: The `config.ini` records the last update time. If it has been more than 2 days without an update, the application will update the above three files upon startup.
+
+2. **Manual Update**: If the automatic update fails due to poor network conditions, you need to click on **File** > **Update Trainers List** from the menu bar after the network improves to perform the update.
 
 ## Debug Mode
 
@@ -63,6 +71,10 @@ to
 debugmode = true
 ```
 to enable debug mode.
+
+## About the Official Version
+
+The official version of Game Trainer Manager has removed the crawler feature from the beta version, so it will not impose an additional burden on the servers of FLiNG Trainer. When users download the trainer, the software will open the download link using the default browser instead of initiating a request directly through the program. When searching for trainers, users will rely on local data without needing to connect to the network.
 
 ## Disclaimer
 
