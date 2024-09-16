@@ -39,3 +39,9 @@ def extract_game_name(title):
     )
     game_name = re.sub(pattern, '', title)
     return game_name
+
+def tr(text):
+        try:
+            return _(text) # type: ignore
+        except Exception as e:
+            return text

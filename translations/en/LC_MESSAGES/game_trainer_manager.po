@@ -91,8 +91,8 @@ msgstr "Cancel"
 msgid "更新成功"
 msgstr "Update Successful"
 
-msgid "修改器相关数据更新完成！"
-msgstr "Trainer-related data update completed!"
+msgid "修改器相关数据更新完成。"
+msgstr "Trainer-related data update completed."
 
 msgid "选择修改器文件"
 msgstr "Select Trainer Files"
@@ -201,3 +201,9 @@ msgstr "Switch Theme"
 
 msgid "打开Cheat Engine官网"
 msgstr "Open Cheat Engine Website"
+
+msgid "更新失败"
+msgstr "Update Failed"
+
+msgid "网络错误，请稍后再试。"
+msgstr "Network error, please try again later."

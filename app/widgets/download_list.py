@@ -30,10 +30,9 @@ class CustomDownloadListWidget(QListWidget):
             menu.exec(event.globalPos())
 
     def downloadTrainer(self, item):
-        global trainers_data
         try:
             game_name = item.text()
-            trainer_data = next((t for t in trainers_data if t['game_name'] == game_name), None)
+            trainer_data = next((t for t in self.main_window.trainers_data if t['game_name'] == game_name), None)
             if trainer_data:
                 download_url = trainer_data['download_url']
                 webbrowser.open(download_url)
@@ -42,10 +41,9 @@ class CustomDownloadListWidget(QListWidget):
             self.main_window.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
 
     def openTrainerPage(self, item):
-        global trainers_data
         try:
             game_name = item.text()
-            trainer_data = next((t for t in trainers_data if t['game_name'] == game_name), None)
+            trainer_data = next((t for t in self.main_window.trainers_data if t['game_name'] == game_name), None)
             if trainer_data:
                 trainer_url = trainer_data['trainer_url']
                 if trainer_url:

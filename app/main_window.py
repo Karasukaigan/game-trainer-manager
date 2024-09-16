@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import QApplication, QMainWindow, QPlainTextEdit, QMenuBar, QMenu, QLineEdit, QHBoxLayout, QVBoxLayout, QWidget, QFileDialog, QLabel, QScrollArea
-from PyQt6.QtCore import Qt, QProcess
+from PyQt6.QtCore import Qt, QProcess, QEventLoop, QThread, pyqtSignal, QThreadPool, QRunnable, QObject
 from PyQt6.QtGui import QIcon, QPixmap
 from app.config import *
 from app.utils.helpers import *
@@ -13,6 +13,44 @@ from retrying import retry
 import requests
 from datetime import datetime, timedelta
 
+class UpdateDataSignals(QObject):
+    update_signal = pyqtSignal(str)
+    finished = pyqtSignal(bool, str, str)
+
+class UpdateDataRunnable(QRunnable):
+    def __init__(self, need_confirm):
+        super().__init__()
+        self.signals = UpdateDataSignals()
+        self.need_confirm = need_confirm
+        
+    def run(self):
+        try:
+            base_url = 'https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/'
+            resources_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources')
+            downloads = ["trainers_list.csv", "game_names_merged.csv", "abbreviation.csv"]
+            for download in downloads:
+                download_url = base_url + download
+                local_filename = os.path.join(resources_path, download)
+                self.signals.update_signal.emit(f"<span style='color:yellow;'>[download]</span> {download_url}")
+                response = requests.get(download_url, timeout=6)
+                if response.status_code == 200:
+                    with open(local_filename, 'wb') as f:
+                        f.write(response.content)
+                    self.signals.update_signal.emit(f"<span style='color:yellow;'>[save]</span> Download successful : {local_filename}")
+                else:
+                    raise requests.exceptions.RequestException({response.status_code})
+            self.signals.update_signal.emit(f"<span style='color:LightGreen;'>[success]</span> Data related to the trainers has been updated!")
+            if self.need_confirm:
+                self.signals.finished.emit(True, tr("更新成功"), tr("修改器相关数据更新完成。"))
+        except requests.exceptions.RequestException as e:
+            self.signals.update_signal.emit(f"<span style='color:red;'>[error]</span> Network request error : {str(e)}")
+            if self.need_confirm:
+                self.signals.finished.emit(False, tr("更新失败"), tr("网络错误，请稍后再试。"))
+        except Exception as e:
+            self.signals.update_signal.emit(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            if self.need_confirm:
+                self.signals.finished.emit(False, tr("更新失败"), tr("网络错误，请稍后再试。"))
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -24,7 +62,9 @@ class MainWindow(QMainWindow):
         self.trainers_data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', 'trainers_list.csv')
         self.trainers_old_data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', 'trainers_list_old.csv')
         self.abbreviation = self.read_abbreviation_from_csv(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', "abbreviation.csv"))
-        
+        self.threadpool = QThreadPool()
+        self.trainers_data = []
+
         self.initUI()
         self.loadTrainers()
         self.auto_update(updateTime)
@@ -47,25 +87,18 @@ class MainWindow(QMainWindow):
                 return ""
         else:
             return ""
-
-
-    def tr(self, text):
-        try:
-            return _(text) # type: ignore
-        except Exception as e:
-            return text
         
     def initUI(self):
         menuBar = QMenuBar(self)
         self.setMenuBar(menuBar)
-        fileMenu = QMenu(self.tr("文件"), self)
-        importAction = fileMenu.addAction(self.tr("从本地导入修改器"))
-        importZipAction = fileMenu.addAction(self.tr("从压缩包导入修改器"))
-        openDirAction = fileMenu.addAction(self.tr("打开修改器目录"))
+        fileMenu = QMenu(tr("文件"), self)
+        importAction = fileMenu.addAction(tr("从本地导入修改器"))
+        importZipAction = fileMenu.addAction(tr("从压缩包导入修改器"))
+        openDirAction = fileMenu.addAction(tr("打开修改器目录"))
         fileMenu.addSeparator()
-        updateAction = fileMenu.addAction(self.tr("更新修改器列表"))
-        openListAction = fileMenu.addAction(self.tr("打开修改器列表"))
-        openOldListAction = fileMenu.addAction(self.tr("打开旧修改器列表"))
+        updateAction = fileMenu.addAction(tr("更新修改器列表"))
+        openListAction = fileMenu.addAction(tr("打开修改器列表"))
+        openOldListAction = fileMenu.addAction(tr("打开旧修改器列表"))
         updateAction.triggered.connect(lambda: self.updateData(True))
         importAction.triggered.connect(self.importFiles)
         openDirAction.triggered.connect(self.openDirectory)
@@ -74,33 +107,33 @@ class MainWindow(QMainWindow):
         openOldListAction.triggered.connect(lambda: self.openCsvFile(self.trainers_old_data_path))
         menuBar.addMenu(fileMenu)
 
-        toolsMenu = QMenu(self.tr("工具"), self)
-        downloadToolAction = QAction(self.tr("隐藏下载器"), self)
+        toolsMenu = QMenu(tr("工具"), self)
+        downloadToolAction = QAction(tr("隐藏下载器"), self)
         downloadToolAction.triggered.connect(self.downloadTool)
         toolsMenu.addAction(downloadToolAction)
-        toggleTranslationSearchAction = QAction(self.tr("查找翻译"), self)
+        toggleTranslationSearchAction = QAction(tr("查找翻译"), self)
         toggleTranslationSearchAction.triggered.connect(self.toggleTranslationSearch)
         toolsMenu.addAction(toggleTranslationSearchAction)
         toolsMenu.addSeparator()
-        translationFileNameAction = QAction(self.tr("翻译修改器文件名"), self)
+        translationFileNameAction = QAction(tr("翻译修改器文件名"), self)
         translationFileNameAction.triggered.connect(self.translationFileName)
         toolsMenu.addAction(translationFileNameAction)
         menuBar.addMenu(toolsMenu)
 
-        setMenu = QMenu(self.tr("设置"), self)
-        switchThemeAction = setMenu.addAction(self.tr("切换主题"))
+        setMenu = QMenu(tr("设置"), self)
+        switchThemeAction = setMenu.addAction(tr("切换主题"))
         switchUIAction = setMenu.addAction("Switch to English")
         switchUIAction.triggered.connect(self.switchUI)
         switchThemeAction.triggered.connect(self.switchTheme)
         menuBar.addMenu(setMenu)
 
-        helpMenu = QMenu(self.tr("帮助"), self)
-        openFLiNGAction = helpMenu.addAction(self.tr("打开风灵月影官网"))
-        openArchiveLinkAction = helpMenu.addAction(self.tr("打开旧修改器列表(2012~2019.05)"))
-        openCELinkAction = helpMenu.addAction(self.tr("打开Cheat Engine官网"))
+        helpMenu = QMenu(tr("帮助"), self)
+        openFLiNGAction = helpMenu.addAction(tr("打开风灵月影官网"))
+        openArchiveLinkAction = helpMenu.addAction(tr("打开旧修改器列表(2012~2019.05)"))
+        openCELinkAction = helpMenu.addAction(tr("打开Cheat Engine官网"))
         helpMenu.addSeparator()
-        openGithubAction = helpMenu.addAction(self.tr("打开GitHub项目页面"))
-        aboutAction = helpMenu.addAction(self.tr("关于"))
+        openGithubAction = helpMenu.addAction(tr("打开GitHub项目页面"))
+        aboutAction = helpMenu.addAction(tr("关于"))
         openFLiNGAction.triggered.connect(lambda: self.openUrl("https://flingtrainer.com/all-trainers-a-z/"))
         openArchiveLinkAction.triggered.connect(lambda: self.openUrl("https://archive.flingtrainer.com/"))
         openCELinkAction.triggered.connect(lambda: self.openUrl("https://www.cheatengine.org/"))
@@ -111,9 +144,9 @@ class MainWindow(QMainWindow):
         self.lineEdit1 = QLineEdit(self)
         self.lineEdit2 = QLineEdit(self)
         self.lineEdit3 = QLineEdit(self)
-        self.lineEdit1.setPlaceholderText(self.tr("在已有修改器里搜索"))
-        self.lineEdit2.setPlaceholderText(self.tr("在风灵月影官网搜索"))
-        self.lineEdit3.setPlaceholderText(self.tr("用关键词查询游戏名(按回车查询)"))
+        self.lineEdit1.setPlaceholderText(tr("在已有修改器里搜索"))
+        self.lineEdit2.setPlaceholderText(tr("在风灵月影官网搜索"))
+        self.lineEdit3.setPlaceholderText(tr("用关键词查询游戏名(按回车查询)"))
         self.lineEdit1.textChanged.connect(self.onLineEdit1TextChanged)
         self.lineEdit2.textChanged.connect(self.onLineEdit2TextChanged)
         self.lineEdit3.keyPressEvent = self.lineEdit3_keyPressEvent
@@ -127,15 +160,15 @@ class MainWindow(QMainWindow):
         if config.get('settings', 'downloadToolIsHidden') == 'true':
             self.lineEdit2.hide()
             self.listWidgetRight.hide()
-            downloadToolAction.setText(self.tr("下载器"))
+            downloadToolAction.setText(tr("下载器"))
         else:
-            downloadToolAction.setText(self.tr("隐藏下载器"))
+            downloadToolAction.setText(tr("隐藏下载器"))
         if config.get('settings', 'toggleTranslationSearchIsHidden') == 'true':
             self.lineEdit3.hide()
             self.listWidgetName.hide()
-            toggleTranslationSearchAction.setText(self.tr("查找翻译"))
+            toggleTranslationSearchAction.setText(tr("查找翻译"))
         else:
-            toggleTranslationSearchAction.setText(self.tr("隐藏查找翻译"))
+            toggleTranslationSearchAction.setText(tr("隐藏查找翻译"))
         if config.get('settings', 'enableEnglishUI') == 'true':
             switchUIAction.setText("切换为中文")
         else:
@@ -206,6 +239,7 @@ class MainWindow(QMainWindow):
 
     def getTrainersData(self):
         global trainers_data
+        trainers_data = []
         try:
             for csv_file in [self.trainers_data_path, self.trainers_old_data_path]:
                 with open(csv_file, mode='r', encoding='utf-8') as f:
@@ -227,6 +261,7 @@ class MainWindow(QMainWindow):
                                 'download_url': row[2]
                             }
                         trainers_data.append(trainer_dict)
+            self.trainers_data = trainers_data
             self.append_output_text(f"<span style='color:LightGreen;'>[info]</span> Data for all trainers has been loaded.")
         except Exception as e:
             self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
@@ -274,7 +309,7 @@ class MainWindow(QMainWindow):
                         if any(search_text[0].replace("：", "") in game[key].lower().replace(":", "").replace("：", "") for key in ['zh_name']):
                             search_text.append(game['en_name'].lower().replace(":", ""))
                 existing_games = []
-                for trainer in trainers_data:
+                for trainer in self.trainers_data:
                     for this_text in search_text:
                         game_name = trainer['game_name']
                         sim = similarity(this_text, game_name.lower().replace(":", ""))
@@ -318,50 +353,33 @@ class MainWindow(QMainWindow):
             self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
 
     def updateData(self, need_confirm):
-        global trainers_data
-
         if need_confirm:
             msg_box = QMessageBox(self)
-            msg_box.setWindowTitle(self.tr('更新修改器列表'))
-            msg_text = self.tr('<p>是否要更新修改器列表？</p><p>trainers_list.csv文件被用来储存与修改器相关的信息，其中也包括修改器的下载链接。你也可以通过手动修改trainers_list.csv文件中的数据来完善一些修改器的信息，但请注意数据格式是否正确。</p><p>更新需要一些时间，画面可能会卡住，请耐心等待。</span></p>')
+            msg_box.setWindowTitle(tr('更新修改器列表'))
+            msg_text = tr('<p>是否要更新修改器列表？</p><p>trainers_list.csv文件被用来储存与修改器相关的信息，其中也包括修改器的下载链接。你也可以通过手动修改trainers_list.csv文件中的数据来完善一些修改器的信息，但请注意数据格式是否正确。</p><p>更新需要一些时间，画面可能会卡住，请耐心等待。</span></p>')
             msg_box.setText(msg_text)
-            btn_yes = msg_box.addButton(self.tr('确定'), QMessageBox.ButtonRole.AcceptRole)
-            btn_no = msg_box.addButton(self.tr('取消'), QMessageBox.ButtonRole.RejectRole)
+            btn_yes = msg_box.addButton(tr('确定'), QMessageBox.ButtonRole.AcceptRole)
+            btn_no = msg_box.addButton(tr('取消'), QMessageBox.ButtonRole.RejectRole)
             msg_box.setDefaultButton(btn_no)
             msg_box.exec()
 
         if (need_confirm and msg_box.clickedButton() == btn_yes) or not need_confirm:
-            try:
-                base_url = 'https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/'
-                resources_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources')
-                downloads = ["trainers_list.csv", "game_names_merged.csv", "abbreviation.csv"]
-                try:
-                    for download in downloads:
-                        download_url = base_url + download
-                        local_filename = os.path.join(resources_path, download)
-                        self.append_output_text(f"<span style='color:yellow;'>[download]</span> {download_url}")
-                        response = requests.get(download_url, timeout=6)
-                        if response.status_code == 200:
-                            with open(local_filename, 'wb') as f:
-                                f.write(response.content)
-                            self.append_output_text(f"<span style='color:yellow;'>[save]</span> Download successful : {local_filename}")
-                        else:
-                            self.append_output_text(f"<span style='color:red;'>[error]</span> Download failed : {response.status_code}")
-                except requests.exceptions.RequestException as e:
-                    self.append_output_text(f"<span style='color:red;'>[error]</span> Network request error : {str(e)}")
+            update = UpdateDataRunnable(need_confirm)
+            update.signals.update_signal.connect(self.append_output_text)
+            update.signals.finished.connect(self.updateMessage)
+            self.threadpool.start(update)
 
-                trainers_data = []
-                self.getTrainersData()
-                self.append_output_text(f"<span style='color:LightGreen;'>[success]</span> Data related to the trainers has been updated!")
-                if need_confirm:
-                    QMessageBox.information(self, self.tr("更新成功"), self.tr("修改器相关数据更新完成！")) 
-            except Exception as e:
-                self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+    def updateMessage(self, type, title, text):
+        if type:
+            self.getTrainersData()
+            QMessageBox.information(self, title, text) 
+        else:
+            QMessageBox.critical(self, title, text)
 
     def importFiles(self):
         try:
             options = QFileDialog.Option.ReadOnly
-            files, _ = QFileDialog.getOpenFileNames(self, self.tr("选择修改器文件"), "", "Executable Files (*.exe)", options=options)
+            files, _ = QFileDialog.getOpenFileNames(self, tr("选择修改器文件"), "", "Executable Files (*.exe)", options=options)
             
             if files:
                 target_dir = self.trainersPath
@@ -392,7 +410,7 @@ class MainWindow(QMainWindow):
             self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
 
     def importZipFiles(self):
-        files, _ = QFileDialog.getOpenFileNames(self, self.tr("选择压缩包文件"), "", self.tr("压缩包 (*.zip *.rar)"))
+        files, _ = QFileDialog.getOpenFileNames(self, tr("选择压缩包文件"), "", tr("压缩包 (*.zip *.rar)"))
         if files:
             cache_dir = os.path.join(os.getcwd(), 'cache')
             trainers_dir = os.path.join(os.getcwd(), 'trainers')
@@ -420,12 +438,12 @@ class MainWindow(QMainWindow):
                             os.rename(os.path.join(root, file), os.path.join(trainers_dir, file))
                             self.append_output_text(f"<span style='color:green;'>[import]</span> {os.path.join(trainers_dir, file)}")
 
-                QMessageBox.information(self, self.tr("导入成功"), self.tr("<p>已从选择的压缩包导入修改器！</p><p><span style='color:red;'>但请注意，有些修改器可能需要额外的文件才能正确运行。</span></p>"))
+                QMessageBox.information(self, tr("导入成功"), tr("<p>已从选择的压缩包导入修改器！</p><p><span style='color:red;'>但请注意，有些修改器可能需要额外的文件才能正确运行。</span></p>"))
                 self.append_output_text(f"<span style='color:LightGreen;'>[success]</span> File imported successfully!")
                 self.loadTrainers()
             except Exception as e:
                 self.append_output_text(f"<span style='color:red;'>[error]</span> An error occurred while processing the archive: {str(e)}")
-                QMessageBox.critical(self, self.tr("错误"), self.tr("处理压缩包时出现错误") + f": {e}")
+                QMessageBox.critical(self, tr("错误"), tr("处理压缩包时出现错误") + f": {e}")
             finally:
                 for root, dirs, files in os.walk(cache_dir):
                     for file in files:
@@ -464,8 +482,8 @@ class MainWindow(QMainWindow):
 
     def downloadTool(self):
         action = self.sender()
-        is_hidden = action.text() == self.tr("隐藏下载器")
-        action.setText(self.tr("下载器") if is_hidden else self.tr("隐藏下载器"))
+        is_hidden = action.text() == tr("隐藏下载器")
+        action.setText(tr("下载器") if is_hidden else tr("隐藏下载器"))
         config.set('settings', 'downloadToolIsHidden', str(is_hidden).lower())
         with open(self.config_path, 'w') as configfile:
             config.write(configfile)
@@ -475,8 +493,8 @@ class MainWindow(QMainWindow):
 
     def toggleTranslationSearch(self):
         action = self.sender()
-        is_hidden = action.text() == self.tr("隐藏查找翻译")
-        action.setText(self.tr("查找翻译") if is_hidden else self.tr("隐藏查找翻译"))
+        is_hidden = action.text() == tr("隐藏查找翻译")
+        action.setText(tr("查找翻译") if is_hidden else tr("隐藏查找翻译"))
         config.set('settings', 'toggleTranslationSearchIsHidden', str(is_hidden).lower())
         with open(self.config_path, 'w') as configfile:
             config.write(configfile)
@@ -486,11 +504,11 @@ class MainWindow(QMainWindow):
 
     def translationFileName(self):
         msg_box = QMessageBox(self)
-        msg_box.setWindowTitle(self.tr('翻译修改器文件名'))
-        msg_text = self.tr('<p>确定要翻译已有修改器的文件名？</p><p><span style="color:red;">此操作不可逆，且可能出现翻译错误。</span></p><p>翻译需要一些时间，画面可能会卡住，请耐心等待。</p>')
+        msg_box.setWindowTitle(tr('翻译修改器文件名'))
+        msg_text = tr('<p>确定要翻译已有修改器的文件名？</p><p><span style="color:red;">此操作不可逆，且可能出现翻译错误。</span></p><p>翻译需要一些时间，画面可能会卡住，请耐心等待。</p>')
         msg_box.setText(msg_text)
-        btn_yes = msg_box.addButton(self.tr('确定'), QMessageBox.ButtonRole.AcceptRole)
-        btn_no = msg_box.addButton(self.tr('取消'), QMessageBox.ButtonRole.RejectRole)
+        btn_yes = msg_box.addButton(tr('确定'), QMessageBox.ButtonRole.AcceptRole)
+        btn_no = msg_box.addButton(tr('取消'), QMessageBox.ButtonRole.RejectRole)
         msg_box.setDefaultButton(btn_no)
         msg_box.exec()
 
@@ -511,7 +529,7 @@ class MainWindow(QMainWindow):
                         max_similarity = 0
                         best_match = None
                         for name_data in self.names_data:
-                            sim = similarity(normalized_name, name_data["en_name"])
+                            sim = similarity(normalized_name.lower(), name_data["en_name"].lower())
                             if sim > max_similarity and sim > 0.8:
                                 max_similarity = sim
                                 best_match = name_data
@@ -530,18 +548,18 @@ class MainWindow(QMainWindow):
             self.loadTrainers()
 
     def showAboutDialog(self):
-        about_text = (f"<h1>Game Trainer Manager {self.version_number}</h1><p>{self.tr('项目贡献者：')}<a href='https://space.bilibili.com/2838092'>鸦无量</a></p><p>{self.tr('项目地址：')}</p><p><a href='https://github.com/Karasukaigan/game-trainer-manager'>Karasukaigan/game-trainer-manager(GitHub)</a></p><p><a href='https://gitee.com/karasukaigan/game-trainer-manager'>Karasukaigan/game-trainer-manager(Gitee)</a></p>" +
-                      self.tr("<h2>免责声明</h2>"
+        about_text = (f"<h1>Game Trainer Manager {self.version_number}</h1><p>{tr('项目贡献者：')}<a href='https://space.bilibili.com/2838092'>鸦无量</a></p><p>{tr('项目地址：')}</p><p><a href='https://github.com/Karasukaigan/game-trainer-manager'>Karasukaigan/game-trainer-manager(GitHub)</a></p><p><a href='https://gitee.com/karasukaigan/game-trainer-manager'>Karasukaigan/game-trainer-manager(Gitee)</a></p>" +
+                      tr("<h2>免责声明</h2>"
                       "<p>本项目为玩家自发制作，与FLiNG Trainer无关。其设计目的是用于管理包括但不限于FLiNG Trainer制作的任何.exe格式的游戏修改器文件。本软件完全免费且开源，请勿将其用于商业用途。</p>"
                       "<p>使用本软件所造成的任何损失，软件开发者概不负责。本软件尊重FLiNG Trainer等游戏修改器制作方的版权，不会对游戏修改器文件进行除修改文件名之外的任何修改，仅提供下载、保存、删除等管理功能。</p>"
                       "<p>此外，用户应自行承担下载和使用第三方游戏修改器所带来的风险。请确保您在使用修改器时遵守相关游戏的使用条款和服务协议。对于因违反游戏公司政策而导致的任何后果，开发者不承担责任。</p>"
                       "<p>本软件严格禁止用于任何非法用途，包括但不限于违反游戏公司政策、作弊、破坏游戏平衡等行为。用户在使用本软件时应当遵守相关法律法规和游戏公司政策，以确保公平和合法的游戏环境。</p>"
         ))
         message_box = QMessageBox(self)
-        message_box.setWindowTitle(self.tr("关于Game Trainer Manager"))
+        message_box.setWindowTitle(tr("关于Game Trainer Manager"))
         message_box.setIconPixmap(QPixmap(self.windowIcon().pixmap(100, 200)))
         message_box.setStandardButtons(QMessageBox.StandardButton.Ok)
-        message_box.button(QMessageBox.StandardButton.Ok).setText(self.tr("我已知晓"))
+        message_box.button(QMessageBox.StandardButton.Ok).setText(tr("我已知晓"))
 
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
