@@ -1,10 +1,10 @@
-# Game Trainer Manager
+# 游戏修改器管理器
 
 [English](./README.md) | 简体中文
 
 <img src="app/resources/logo.png" alt="Logo" width="200" height="200">
 
-**Game Trainer Manager（游戏修改器管理器）** 是一个轻量化的软件，专门用于管理`.exe`格式的游戏修改器文件。它提供了下载、保存、删除等功能，支持简体中文和英文，完全免费且开源（请勿将其用于商业用途）。
+**游戏修改器管理器（Game Trainer Manager）** 是一个轻量化的软件，专门用于管理`.exe`格式的游戏修改器文件。它提供了下载、保存、删除等功能，支持简体中文和英文，完全免费且开源（请勿将其用于商业用途）。
 
 ## 功能特点
 

@@ -25,20 +25,34 @@ class UpdateDataRunnable(QRunnable):
         
     def run(self):
         try:
-            base_url = 'https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/'
+            # base_url = 'https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/'
+            base_urls = [
+                'https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/',
+                'https://raw.gitmirror.com/Karasukaigan/game-trainer-manager/main/app/resources/',
+                'https://gh-proxy.com/raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/'
+            ]
             resources_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources')
             downloads = ["trainers_list.csv", "game_names_merged.csv", "abbreviation.csv"]
             for download in downloads:
-                download_url = base_url + download
-                local_filename = os.path.join(resources_path, download)
-                self.signals.update_signal.emit(f"<span style='color:yellow;'>[download]</span> {download_url}")
-                response = requests.get(download_url, timeout=6)
-                if response.status_code == 200:
-                    with open(local_filename, 'wb') as f:
-                        f.write(response.content)
-                    self.signals.update_signal.emit(f"<span style='color:yellow;'>[save]</span> Download successful : {local_filename}")
-                else:
-                    raise requests.exceptions.RequestException({response.status_code})
+                downloaded = False
+                for base_url in base_urls:
+                    download_url = base_url + download
+                    local_filename = os.path.join(resources_path, download)
+                    self.signals.update_signal.emit(f"<span style='color:yellow;'>[download]</span> {download_url}")
+                    try:
+                        response = requests.get(download_url, timeout=6)
+                        if response.status_code == 200:
+                            with open(local_filename, 'wb') as f:
+                                f.write(response.content)
+                            self.signals.update_signal.emit(f"<span style='color:yellow;'>[save]</span> Download successful : {local_filename}")
+                            downloaded = True
+                            break
+                        else:
+                            raise requests.exceptions.RequestException(f"HTTP {response.status_code}")
+                    except requests.exceptions.RequestException as e:
+                        self.signals.update_signal.emit(f"<span style='color:red;'>[error]</span> Network request error : {str(e)} on {download_url}")
+                if not downloaded:
+                    raise Exception(f"Failed to download {download} from all URLs")
             self.signals.update_signal.emit(f"<span style='color:LightGreen;'>[success]</span> Data related to the trainers has been updated!")
             if self.need_confirm:
                 self.signals.finished.emit(True, tr("更新成功"), tr("修改器相关数据更新完成。"))
@@ -208,7 +222,10 @@ class MainWindow(QMainWindow):
         x = (screen_width - window_width) // 2
         y = (screen_height - window_height) // 2
         self.setGeometry(x, y, window_width, window_height)
-        self.setWindowTitle(f'Game Trainer Manager {version_number}')
+        if config.get('settings', 'enableEnglishUI') == 'true':
+            self.setWindowTitle(f'Game Trainer Manager {version_number}')
+        else:
+            self.setWindowTitle(f'游戏修改器管理器 {version_number}')
         self.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', 'logo.png')))
 
         self.append_output_text(f"<span style='color:LightGreen;'>[info]</span> The main window has been loaded.")
