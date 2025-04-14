@@ -72,6 +72,9 @@ debugmode = true
 ```
 to enable debug mode.
 
+## Support the Author
+<img src="./app/resources/wechat.jpg" alt="微信赞赏码" width="300">
+
 ## About the Official Version
 
 The official version of Game Trainer Manager has removed the crawler feature from the beta version, so it will not impose an additional burden on the servers of FLiNG Trainer. When users download the trainer, the software will open the download link using the default browser instead of initiating a request directly through the program. When searching for trainers, users will rely on local data without needing to connect to the network.

@@ -74,6 +74,9 @@ debugmode = true
 ```
 即可打开调试模式。
 
+## 支持作者
+<img src="./app/resources/wechat.jpg" alt="微信赞赏码" width="300">
+
 ## 关于正式版本
 
 Game Trainer Manager的正式版已移除测试版中的爬虫功能，因此不会对FLiNG Trainer的服务器造成额外负担。用户在下载修改器时，该软件将使用默认浏览器打开下载链接，而不是直接通过程序发起请求。在搜索修改器时，用户将依赖于本地数据，无需连接网络。
