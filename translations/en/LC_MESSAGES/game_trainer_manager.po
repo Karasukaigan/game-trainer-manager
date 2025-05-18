@@ -76,11 +76,10 @@ msgid "隐藏查找翻译"
 msgstr "Hide Translation Finder"
 
 msgid ""
-"<p>是否要更新修改器列表？</p><p>trainers_list.csv文件被用来储存与修改器相关的信息，其中也包括修改器的下载链接。你也可以通过手动修改trainers_list.csv文件中的数据来完善一些修改器的信息，但请注意数据格式是否正确。</p><p>更新需要一些时间，画面可能会卡住，请耐心等待。</span></p>"
+"<p>是否要更新修改器列表？</p><p>trainers_list.csv文件被用来储存与修改器相关的信息，其中也包括修改器的下载链接。你也可以通过手动修改trainers_list.csv文件中的数据来完善一些修改器的信息，但请注意数据格式是否正确。</p>"
 msgstr ""
 "<p>Do you want to update the trainers list file?</p>"
 "<p>The trainers_list.csv file is used to store information related to trainers, including download links for the trainers. You can also manually modify the data in the trainers_list.csv file to improve some information about trainers, but please ensure the data format is correct.</p>"
-"<p>The update will take some time, and the screen may freeze. Please be patient.</p>"
 
 msgid "确定"
 msgstr "OK"
@@ -207,3 +206,15 @@ msgstr "Update Failed"
 
 msgid "网络错误，请稍后再试。"
 msgstr "Network error, please try again later."
+
+msgid "运行Steam"
+msgstr "Run Steam"
+
+msgid "打开Steam官网"
+msgstr "Open Steam Website"
+
+msgid "打开WeMod官网"
+msgstr "Open WeMod Website"
+
+msgid "<p>最后更新："
+msgstr "<p>Last Updated: "

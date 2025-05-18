@@ -12,6 +12,7 @@ import zipfile, rarfile
 from retrying import retry
 import requests
 from datetime import datetime, timedelta
+import app.tools as tools
 
 class UpdateDataSignals(QObject):
     update_signal = pyqtSignal(str)
@@ -56,6 +57,7 @@ class UpdateDataRunnable(QRunnable):
             self.signals.update_signal.emit(f"<span style='color:LightGreen;'>[success]</span> Data related to the trainers has been updated!")
             if self.need_confirm:
                 self.signals.finished.emit(True, tr("更新成功"), tr("修改器相关数据更新完成。"))
+            os.execl(sys.executable, sys.executable, *sys.argv)
         except requests.exceptions.RequestException as e:
             self.signals.update_signal.emit(f"<span style='color:red;'>[error]</span> Network request error : {str(e)}")
             if self.need_confirm:
@@ -76,6 +78,7 @@ class MainWindow(QMainWindow):
         self.trainers_data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', 'trainers_list.csv')
         self.trainers_old_data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', 'trainers_list_old.csv')
         self.abbreviation = self.read_abbreviation_from_csv(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', "abbreviation.csv"))
+        self.update_time = updateTime
         self.threadpool = QThreadPool()
         self.trainers_data = []
 
@@ -132,6 +135,9 @@ class MainWindow(QMainWindow):
         translationFileNameAction = QAction(tr("翻译修改器文件名"), self)
         translationFileNameAction.triggered.connect(self.translationFileName)
         toolsMenu.addAction(translationFileNameAction)
+        openSteamAction = QAction(tr("运行Steam"), self)
+        openSteamAction.triggered.connect(tools.find_and_run_steam)
+        toolsMenu.addAction(openSteamAction)
         menuBar.addMenu(toolsMenu)
 
         setMenu = QMenu(tr("设置"), self)
@@ -144,13 +150,17 @@ class MainWindow(QMainWindow):
         helpMenu = QMenu(tr("帮助"), self)
         openFLiNGAction = helpMenu.addAction(tr("打开风灵月影官网"))
         openArchiveLinkAction = helpMenu.addAction(tr("打开旧修改器列表(2012~2019.05)"))
+        openSteamAction = helpMenu.addAction(tr("打开Steam官网"))
         openCELinkAction = helpMenu.addAction(tr("打开Cheat Engine官网"))
+        openWeModAction = helpMenu.addAction(tr("打开WeMod官网"))
         helpMenu.addSeparator()
         openGithubAction = helpMenu.addAction(tr("打开GitHub项目页面"))
         aboutAction = helpMenu.addAction(tr("关于"))
-        openFLiNGAction.triggered.connect(lambda: self.openUrl("https://flingtrainer.com/all-trainers-a-z/"))
+        openFLiNGAction.triggered.connect(lambda: self.openUrl("https://flingtrainer.com/all-trainers/"))
         openArchiveLinkAction.triggered.connect(lambda: self.openUrl("https://archive.flingtrainer.com/"))
+        openSteamAction.triggered.connect(lambda: self.openUrl("https://store.steampowered.com/"))
         openCELinkAction.triggered.connect(lambda: self.openUrl("https://www.cheatengine.org/"))
+        openWeModAction.triggered.connect(lambda: self.openUrl("https://www.wemod.com/"))
         aboutAction.triggered.connect(self.showAboutDialog)
         openGithubAction.triggered.connect(lambda: self.openUrl("https://github.com/Karasukaigan/game-trainer-manager"))
         menuBar.addMenu(helpMenu)
@@ -373,7 +383,7 @@ class MainWindow(QMainWindow):
         if need_confirm:
             msg_box = QMessageBox(self)
             msg_box.setWindowTitle(tr('更新修改器列表'))
-            msg_text = tr('<p>是否要更新修改器列表？</p><p>trainers_list.csv文件被用来储存与修改器相关的信息，其中也包括修改器的下载链接。你也可以通过手动修改trainers_list.csv文件中的数据来完善一些修改器的信息，但请注意数据格式是否正确。</p><p>更新需要一些时间，画面可能会卡住，请耐心等待。</span></p>')
+            msg_text = tr('<p>是否要更新修改器列表？</p><p>trainers_list.csv文件被用来储存与修改器相关的信息，其中也包括修改器的下载链接。你也可以通过手动修改trainers_list.csv文件中的数据来完善一些修改器的信息，但请注意数据格式是否正确。</p>') + tr('<p>最后更新：') + f'{self.update_time}</p>'
             msg_box.setText(msg_text)
             btn_yes = msg_box.addButton(tr('确定'), QMessageBox.ButtonRole.AcceptRole)
             btn_no = msg_box.addButton(tr('取消'), QMessageBox.ButtonRole.RejectRole)
@@ -381,6 +391,7 @@ class MainWindow(QMainWindow):
             msg_box.exec()
 
         if (need_confirm and msg_box.clickedButton() == btn_yes) or not need_confirm:
+            self.output_text_edit.show()
             update = UpdateDataRunnable(need_confirm)
             update.signals.update_signal.connect(self.append_output_text)
             update.signals.finished.connect(self.updateMessage)
@@ -392,6 +403,13 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, title, text) 
         else:
             QMessageBox.critical(self, title, text)
+        self.toggle_output_area(config.get('settings', 'debugMode') == 'true')
+
+    def toggle_output_area(self, visible):
+        if visible:
+            self.output_text_edit.show()
+        else:
+            self.output_text_edit.hide()
 
     def importFiles(self):
         try:
@@ -565,7 +583,7 @@ class MainWindow(QMainWindow):
             self.loadTrainers()
 
     def showAboutDialog(self):
-        about_text = (f"<h1>Game Trainer Manager {self.version_number}</h1><p>{tr('项目贡献者：')}<a href='https://space.bilibili.com/2838092'>鸦无量</a></p><p>{tr('项目地址：')}</p><p><a href='https://github.com/Karasukaigan/game-trainer-manager'>Karasukaigan/game-trainer-manager(GitHub)</a></p><p><a href='https://gitee.com/karasukaigan/game-trainer-manager'>Karasukaigan/game-trainer-manager(Gitee)</a></p>" +
+        about_text = (f"<h1>Game Trainer Manager {self.version_number}</h1><p>{tr('项目贡献者：')}<a href='https://space.bilibili.com/2838092'>鸦无量</a></p><p>{tr('项目地址：')}</p><p><a href='https://github.com/Karasukaigan/game-trainer-manager'>Karasukaigan/game-trainer-manager(GitHub)</a></p>" +
                       tr("<h2>免责声明</h2>"
                       "<p>本项目为玩家自发制作，与FLiNG Trainer无关。其设计目的是用于管理包括但不限于FLiNG Trainer制作的任何.exe格式的游戏修改器文件。本软件完全免费且开源，请勿将其用于商业用途。</p>"
                       "<p>使用本软件所造成的任何损失，软件开发者概不负责。本软件尊重FLiNG Trainer等游戏修改器制作方的版权，不会对游戏修改器文件进行除修改文件名之外的任何修改，仅提供下载、保存、删除等管理功能。</p>"

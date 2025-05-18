@@ -10,6 +10,7 @@ English | [简体中文](./README_ZH.md)
 
 - Manage `.exe` format game trainers
 - Download, save, and delete trainers
+- One-click launch of Steam
 - Multi-language support (Simplified Chinese and English)
 - Lightweight
 - Free and open-source
