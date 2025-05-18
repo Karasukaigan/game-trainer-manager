@@ -24,7 +24,7 @@
 您可以通过以下两种方式下载软件：
 
 1. **直接从 Releases 下载：**
-   - 打开 [Releases（GitHub）](https://github.com/Karasukaigan/game-trainer-manager/releases) 下载 `.exe` 格式的安装包。
+   - 打开 [Releases](https://github.com/Karasukaigan/game-trainer-manager/releases) 下载 `.exe` 格式的安装包。
 
 2. **克隆存储库并在本地运行：**
    - 将存储库克隆到本地机器：
