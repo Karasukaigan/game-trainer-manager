@@ -4,6 +4,7 @@ from PyQt6.QtGui import QIcon, QPixmap
 from app.config import *
 from app.utils.helpers import *
 from app.utils.update_data import *
+from app.utils.update_checker import check_all_trainers
 from app.widgets.custom_list import *
 from app.widgets.download_list import *
 from app.widgets.name_list import *
@@ -66,6 +67,39 @@ class UpdateDataRunnable(QRunnable):
             self.signals.update_signal.emit(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
             if self.need_confirm:
                 self.signals.finished.emit(False, tr("更新失败"), tr("网络错误，请稍后再试。"))
+
+class CheckUpdateSignals(QObject):
+    update_signal = pyqtSignal(str)
+    finished = pyqtSignal(list)
+
+class CheckUpdateRunnable(QRunnable):
+    def __init__(self, local_trainers, trainers_data):
+        super().__init__()
+        self.signals = CheckUpdateSignals()
+        self.local_trainers = local_trainers
+        self.trainers_data = trainers_data
+
+    def run(self):
+        def progress(idx, total, result):
+            name = result.get('local_name', '?')
+            if result.get('error'):
+                self.signals.update_signal.emit(
+                    f"<span style='color:yellow;'>[{idx}/{total}]</span> {name}: "
+                    f"<span style='color:orange;'>{result['error']}</span>"
+                )
+            elif result.get('has_update'):
+                self.signals.update_signal.emit(
+                    f"<span style='color:LightGreen;'>[{idx}/{total}]</span> {name}: "
+                    f"{result['local_version']} → <span style='color:cyan;'>{result['remote_version']}</span> (有新版本!)"
+                )
+            else:
+                self.signals.update_signal.emit(
+                    f"<span style='color:gray;'>[{idx}/{total}]</span> {name}: "
+                    f"{result['local_version']} (已是最新)"
+                )
+
+        results = check_all_trainers(self.local_trainers, self.trainers_data, progress)
+        self.signals.finished.emit(results)
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -135,6 +169,9 @@ class MainWindow(QMainWindow):
         translationFileNameAction = QAction(tr("翻译修改器文件名"), self)
         translationFileNameAction.triggered.connect(self.translationFileName)
         toolsMenu.addAction(translationFileNameAction)
+        checkUpdateAction = QAction(tr("检查更新"), self)
+        checkUpdateAction.triggered.connect(self.checkForUpdates)
+        toolsMenu.addAction(checkUpdateAction)
         openSteamAction = QAction(tr("运行Steam"), self)
         openSteamAction.triggered.connect(tools.find_and_run_steam)
         toolsMenu.addAction(openSteamAction)
@@ -495,6 +532,91 @@ class MainWindow(QMainWindow):
                 self.append_output_text(f"<span style='color:red;'>[error]</span> '{file_path}' cannot be found.")
         except Exception as e:
             self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+
+    def checkForUpdates(self):
+        """检查所有本地修改器是否有新版本"""
+        if not self.trainers:
+            QMessageBox.information(self, tr("检查更新"), tr("没有找到本地修改器，请先导入。"))
+            return
+
+        if not self.trainers_data:
+            self.getTrainersData()
+
+        self.output_text_edit.show()
+        self.append_output_text(f"<span style='color:LightSkyBlue;'>[info]</span> 开始检查 {len(self.trainers)} 个修改器的更新...")
+
+        self._check_update_runnable = CheckUpdateRunnable(self.trainers, self.trainers_data)
+        self._check_update_runnable.signals.update_signal.connect(self.append_output_text)
+        self._check_update_runnable.signals.finished.connect(self._onCheckUpdateFinished)
+        self.threadpool.start(self._check_update_runnable)
+
+    def _onCheckUpdateFinished(self, results):
+        """检查完成后展示结果对话框"""
+        self.toggle_output_area(config.get('settings', 'debugMode') == 'true')
+
+        updates = [r for r in results if r.get('has_update')]
+        errors = [r for r in results if r.get('error')]
+        current = [r for r in results if not r.get('has_update') and not r.get('error')]
+
+        html_parts = ['<div style="font-size:13px;">']
+
+        if updates:
+            html_parts.append(f'<h3 style="color:#4caf50;">{tr("发现更新")} ({len(updates)})</h3>')
+            html_parts.append('<table border="0" cellspacing="4">')
+            for r in updates:
+                game_name = r.get('game_name', r.get('local_name', '?'))
+                local_v = r.get('local_version', '?')
+                remote_v = r.get('remote_version', '?')
+                dl = r.get('download_url', '')
+                html_parts.append(
+                    f'<tr>'
+                    f'<td><b>{game_name}</b></td>'
+                    f'<td><span style="color:#888;">{local_v}</span> → '
+                    f'<span style="color:#4caf50;">{remote_v}</span></td>'
+                    f'<td><a href="{dl}" style="color:#2196f3;">{tr("下载")}</a></td>'
+                    f'</tr>'
+                )
+            html_parts.append('</table>')
+
+        if current:
+            html_parts.append(f'<h3 style="color:#888;">{tr("已是最新")} ({len(current)})</h3>')
+            names = [r.get('game_name', r.get('local_name', '?')) for r in current]
+            html_parts.append('<p style="color:#888;">' + '、'.join(names[:20]) + '</p>')
+
+        if errors:
+            html_parts.append(f'<h3 style="color:#f44336;">{tr("检查失败")} ({len(errors)})</h3>')
+            for r in errors:
+                html_parts.append(
+                    f'<p style="color:#f44336;">'
+                    f'<b>{r.get("local_name", "?")}</b>: {r.get("error", "")}'
+                    f'</p>'
+                )
+
+        html_parts.append('</div>')
+
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle(tr("检查更新结果"))
+        msg_box.setText(''.join(html_parts))
+        msg_box.setTextFormat(Qt.TextFormat.RichText)
+
+        if updates:
+            btn_download_all = msg_box.addButton(tr("打开所有下载链接"), QMessageBox.ButtonRole.AcceptRole)
+            btn_close = msg_box.addButton(tr("关闭"), QMessageBox.ButtonRole.RejectRole)
+            msg_box.setDefaultButton(btn_close)
+            msg_box.exec()
+            if msg_box.clickedButton() == btn_download_all:
+                import webbrowser
+                for r in updates:
+                    dl = r.get('download_url', '')
+                    if dl:
+                        webbrowser.open(dl)
+                        self.append_output_text(
+                            f"<span style='color:LightSkyBlue;'>[open]</span> {r.get('game_name', '?')}: {dl}"
+                        )
+        else:
+            msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+            msg_box.button(QMessageBox.StandardButton.Ok).setText(tr("确定"))
+            msg_box.exec()
 
     def switchUI(self):
         action = self.sender()
