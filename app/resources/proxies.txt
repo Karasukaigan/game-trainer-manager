@@ -1,0 +1,3 @@
+https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/
+https://gh-proxy.com/raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/
+https://gh.xmly.dev/https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/

@@ -213,8 +213,29 @@ msgstr "Run Steam"
 msgid "打开Steam官网"
 msgstr "Open Steam Website"
 
-msgid "打开WeMod官网"
-msgstr "Open WeMod Website"
-
 msgid "<p>最后更新："
 msgstr "<p>Last Updated: "
+
+msgid "置顶"
+msgstr "Pin to top"
+
+msgid "取消置顶"
+msgstr "Unpin"
+
+msgid "Debug模式"
+msgstr "Debug Mode"
+
+msgid "关闭Debug模式"
+msgstr "Close Debug Mode"
+
+msgid "修改GitHub文件加速"
+msgstr "Edit GitHub File Proxies"
+
+msgid "设置下载目录"
+msgstr "Set Download Directory"
+
+msgid "下载目录路径:"
+msgstr "Download Directory Path:"
+
+msgid "选择下载目录"
+msgstr "Select Download Directory"

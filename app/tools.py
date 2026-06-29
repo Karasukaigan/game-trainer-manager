@@ -1,6 +1,7 @@
 import os
 import winreg
 import subprocess
+import json
 
 def find_and_run_steam():
     try:

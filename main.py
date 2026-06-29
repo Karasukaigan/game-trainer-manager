@@ -1,5 +1,5 @@
 import sys, os
-from PyQt6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication
 from app.main_window import *
 from app.utils.helpers import *
 from app.config import *

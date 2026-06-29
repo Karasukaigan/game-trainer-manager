@@ -1,5 +1,5 @@
-from PyQt6.QtWidgets import QListWidget, QMenu, QMessageBox
-from PyQt6.QtGui import QAction
+from PySide6.QtWidgets import QListWidget, QMenu, QMessageBox
+from PySide6.QtGui import QAction
 import webbrowser
 from app.config import *
 from app.utils.helpers import *
@@ -30,15 +30,17 @@ class CustomDownloadListWidget(QListWidget):
             menu.exec(event.globalPos())
 
     def downloadTrainer(self, item):
+        """下载指定修改器"""
         try:
             game_name = item.text()
             trainer_data = next((t for t in self.main_window.trainers_data if t['game_name'] == game_name), None)
             if trainer_data:
                 download_url = trainer_data['download_url']
                 webbrowser.open(download_url)
-                self.main_window.append_output_text(f"<span style='color:LightSkyBlue;'>[download]</span> {item.text()} -> {download_url}")
+                self.main_window.append_log(f"{item.text()} -> {download_url}", "download")
+                self.main_window.startDownloadMonitor(game_name)
         except Exception as e:
-            self.main_window.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.main_window.append_log(f"An unexpected error occurred: {str(e)}", "error")
 
     def openTrainerPage(self, item):
         try:
@@ -48,7 +50,7 @@ class CustomDownloadListWidget(QListWidget):
                 trainer_url = trainer_data['trainer_url']
                 if trainer_url:
                     webbrowser.open(trainer_url)
-                    self.main_window.append_output_text(f"<span style='color:LightSkyBlue;'>[open]</span> {item.text()} -> {trainer_url}")
+                    self.main_window.append_log(f"{item.text()} -> {trainer_url}", "open")
                 else:
                     msg_box = QMessageBox(self.main_window)
                     msg_box.setIcon(QMessageBox.Icon.Warning)
@@ -58,6 +60,6 @@ class CustomDownloadListWidget(QListWidget):
                     ok_button.setText(self.tr("确定"))
                     msg_box.exec()
         except Exception as e:
-            self.main_window.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.main_window.append_log(f"An unexpected error occurred: {str(e)}", "error")
 
                 

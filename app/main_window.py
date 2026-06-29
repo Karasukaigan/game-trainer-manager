@@ -1,22 +1,22 @@
-from PyQt6.QtWidgets import QApplication, QMainWindow, QPlainTextEdit, QMenuBar, QMenu, QLineEdit, QHBoxLayout, QVBoxLayout, QWidget, QFileDialog, QLabel, QScrollArea
-from PyQt6.QtCore import Qt, QProcess, QEventLoop, QThread, pyqtSignal, QThreadPool, QRunnable, QObject
-from PyQt6.QtGui import QIcon, QPixmap
+from PySide6.QtWidgets import QApplication, QMainWindow, QPlainTextEdit, QMenuBar, QMenu, QLineEdit, QHBoxLayout, QVBoxLayout, QWidget, QFileDialog, QLabel, QScrollArea, QDialog, QPushButton
+from PySide6.QtCore import Qt, QProcess, Signal, QThreadPool, QRunnable, QObject, QTimer, QByteArray
+from PySide6.QtGui import QIcon, QPixmap, QPainter
+from PySide6.QtSvg import QSvgRenderer
 from app.config import *
 from app.utils.helpers import *
-from app.utils.update_data import *
 from app.widgets.custom_list import *
 from app.widgets.download_list import *
 from app.widgets.name_list import *
 import csv, shutil, sys
 import zipfile, rarfile
-from retrying import retry
 import requests
 from datetime import datetime, timedelta
 import app.tools as tools
 
 class UpdateDataSignals(QObject):
-    update_signal = pyqtSignal(str)
-    finished = pyqtSignal(bool, str, str)
+    update_signal = Signal(str, str)
+    finished = Signal(bool, str, str)
+    restart_signal = Signal()
 
 class UpdateDataRunnable(QRunnable):
     def __init__(self, need_confirm):
@@ -26,44 +26,51 @@ class UpdateDataRunnable(QRunnable):
         
     def run(self):
         try:
-            # base_url = 'https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/'
-            base_urls = [
-                'https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/',
-                'https://raw.gitmirror.com/Karasukaigan/game-trainer-manager/main/app/resources/',
-                'https://gh-proxy.com/raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/'
-            ]
             resources_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources')
+            proxies_path = os.path.join(resources_path, 'proxies.txt')
+            base_urls = []
+            try:
+                with open(proxies_path, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line:
+                            base_urls.append(line)
+            except FileNotFoundError:
+                base_urls = [
+                    'https://raw.githubusercontent.com/Karasukaigan/game-trainer-manager/main/app/resources/',
+                ]
             downloads = ["trainers_list.csv", "game_names_merged.csv", "abbreviation.csv"]
             for download in downloads:
                 downloaded = False
                 for base_url in base_urls:
                     download_url = base_url + download
                     local_filename = os.path.join(resources_path, download)
-                    self.signals.update_signal.emit(f"<span style='color:yellow;'>[download]</span> {download_url}")
+                    self.signals.update_signal.emit(f"<span style='color:yellow;'>[download]</span> {download_url}", "info")
                     try:
                         response = requests.get(download_url, timeout=6)
                         if response.status_code == 200:
                             with open(local_filename, 'wb') as f:
                                 f.write(response.content)
-                            self.signals.update_signal.emit(f"<span style='color:yellow;'>[save]</span> Download successful : {local_filename}")
+                            self.signals.update_signal.emit(f"<span style='color:yellow;'>[save]</span> Download successful : {local_filename}", "info")
                             downloaded = True
                             break
                         else:
                             raise requests.exceptions.RequestException(f"HTTP {response.status_code}")
                     except requests.exceptions.RequestException as e:
-                        self.signals.update_signal.emit(f"<span style='color:red;'>[error]</span> Network request error : {str(e)} on {download_url}")
+                        self.signals.update_signal.emit(f"Network request error : {str(e)} on {download_url}", "error")
                 if not downloaded:
                     raise Exception(f"Failed to download {download} from all URLs")
-            self.signals.update_signal.emit(f"<span style='color:LightGreen;'>[success]</span> Data related to the trainers has been updated!")
+            self.signals.update_signal.emit(f"Data related to the trainers has been updated!", "success")
             if self.need_confirm:
                 self.signals.finished.emit(True, tr("更新成功"), tr("修改器相关数据更新完成。"))
-            os.execl(sys.executable, sys.executable, *sys.argv)
+            self.signals.restart_signal.emit()
+            return
         except requests.exceptions.RequestException as e:
-            self.signals.update_signal.emit(f"<span style='color:red;'>[error]</span> Network request error : {str(e)}")
+            self.signals.update_signal.emit(f"Network request error : {str(e)}", "error")
             if self.need_confirm:
                 self.signals.finished.emit(False, tr("更新失败"), tr("网络错误，请稍后再试。"))
         except Exception as e:
-            self.signals.update_signal.emit(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.signals.update_signal.emit(f"An unexpected error occurred: {str(e)}", "error")
             if self.need_confirm:
                 self.signals.finished.emit(False, tr("更新失败"), tr("网络错误，请稍后再试。"))
 
@@ -81,6 +88,12 @@ class MainWindow(QMainWindow):
         self.update_time = updateTime
         self.threadpool = QThreadPool()
         self.trainers_data = []
+        self.download_dir = downloadDir
+        self._monitor_timer = QTimer(self)
+        self._monitor_timer.timeout.connect(self._checkDownloadDir)
+        self._monitor_snapshot = set()
+        self._monitor_game_name = ""
+        self._monitor_count = 0
 
         self.initUI()
         self.loadTrainers()
@@ -92,7 +105,7 @@ class MainWindow(QMainWindow):
         current_date = datetime.now()
         delta = current_date - last_update_datetime
         if delta > timedelta(days=2):
-            self.append_output_text(f"<span style='color:red;'>[info]</span> More than two days have passed since {last_update_time}, an update is needed.")
+            self.append_log(f"More than two days have passed since {last_update_time}, an update is needed.", "info", "red")
             try:
                 self.updateData(False)
                 config.set('settings', 'updatetime', current_date.strftime("%Y-%m-%d"))
@@ -100,7 +113,7 @@ class MainWindow(QMainWindow):
                     config.write(configfile)
                 return current_date.strftime("%Y-%m-%d")
             except Exception as e:
-                self.append_output_text(f"<span style='color:red;'>[error]</span> Automatic update failed : {e}")
+                self.append_log(f"Automatic update failed : {e}", "error")
                 return ""
         else:
             return ""
@@ -112,11 +125,16 @@ class MainWindow(QMainWindow):
         importAction = fileMenu.addAction(tr("从本地导入修改器"))
         importZipAction = fileMenu.addAction(tr("从压缩包导入修改器"))
         openDirAction = fileMenu.addAction(tr("打开修改器目录"))
+        setDownloadDirAction = fileMenu.addAction(tr("设置下载目录"))
+        setDownloadDirAction.triggered.connect(self.setDownloadDir)
         fileMenu.addSeparator()
         updateAction = fileMenu.addAction(tr("更新修改器列表"))
+        editProxiesAction = fileMenu.addAction(tr("修改GitHub文件加速"))
         openListAction = fileMenu.addAction(tr("打开修改器列表"))
         openOldListAction = fileMenu.addAction(tr("打开旧修改器列表"))
         updateAction.triggered.connect(lambda: self.updateData(True))
+        editProxiesAction.triggered.connect(lambda: self.openCsvFile(
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', 'proxies.txt')))
         importAction.triggered.connect(self.importFiles)
         openDirAction.triggered.connect(self.openDirectory)
         importZipAction.triggered.connect(self.importZipFiles)
@@ -142,9 +160,12 @@ class MainWindow(QMainWindow):
 
         setMenu = QMenu(tr("设置"), self)
         switchThemeAction = setMenu.addAction(tr("切换主题"))
+        switchThemeAction.triggered.connect(self.switchTheme)
+        debugAction = QAction(tr("关闭Debug模式") if config.get('settings', 'debugMode') == 'true' else tr("Debug模式"), self)
+        debugAction.triggered.connect(self.toggleDebugMode)
+        setMenu.addAction(debugAction)
         switchUIAction = setMenu.addAction("Switch to English")
         switchUIAction.triggered.connect(self.switchUI)
-        switchThemeAction.triggered.connect(self.switchTheme)
         menuBar.addMenu(setMenu)
 
         helpMenu = QMenu(tr("帮助"), self)
@@ -152,7 +173,6 @@ class MainWindow(QMainWindow):
         openArchiveLinkAction = helpMenu.addAction(tr("打开旧修改器列表(2012~2019.05)"))
         openSteamAction = helpMenu.addAction(tr("打开Steam官网"))
         openCELinkAction = helpMenu.addAction(tr("打开Cheat Engine官网"))
-        openWeModAction = helpMenu.addAction(tr("打开WeMod官网"))
         helpMenu.addSeparator()
         openGithubAction = helpMenu.addAction(tr("打开GitHub项目页面"))
         aboutAction = helpMenu.addAction(tr("关于"))
@@ -160,7 +180,6 @@ class MainWindow(QMainWindow):
         openArchiveLinkAction.triggered.connect(lambda: self.openUrl("https://archive.flingtrainer.com/"))
         openSteamAction.triggered.connect(lambda: self.openUrl("https://store.steampowered.com/"))
         openCELinkAction.triggered.connect(lambda: self.openUrl("https://www.cheatengine.org/"))
-        openWeModAction.triggered.connect(lambda: self.openUrl("https://www.wemod.com/"))
         aboutAction.triggered.connect(self.showAboutDialog)
         openGithubAction.triggered.connect(lambda: self.openUrl("https://github.com/Karasukaigan/game-trainer-manager"))
         menuBar.addMenu(helpMenu)
@@ -238,7 +257,7 @@ class MainWindow(QMainWindow):
             self.setWindowTitle(f'游戏修改器管理器 {version_number}')
         self.setWindowIcon(QIcon(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'resources', 'logo.png')))
 
-        self.append_output_text(f"<span style='color:LightGreen;'>[info]</span> The main window has been loaded.")
+        self.append_log(f"The main window has been loaded.")
         
         if isFirstStart == 'true':
             self.showAboutDialog()
@@ -247,6 +266,7 @@ class MainWindow(QMainWindow):
                 config.write(configfile)
     
     def loadTrainers(self):
+        """加载已导入的修改器"""
         try:
             if not os.path.exists(self.trainersPath):
                 os.makedirs(self.trainersPath)
@@ -254,17 +274,42 @@ class MainWindow(QMainWindow):
             self.trainers = []
             self.listWidgetLeft.clear()
 
+            items_to_add = []
+
             for root, _, files in os.walk(self.trainersPath):
                 for file in files:
                     if file.endswith(".exe"):
                         full_path = os.path.join(root, file)
                         self.trainers.append(full_path)
-                        self.listWidgetLeft.addItem(file.split('.exe')[0])
-            self.append_output_text(f"<span style='color:LightGreen;'>[info]</span> The list of trainers has been loaded.")
-        except Exception as e:
-            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+                        items_to_add.append(file.split('.exe')[0])
 
+            for item in items_to_add:
+                self.listWidgetLeft.addItem(item)
+
+            pinned = self.listWidgetLeft._read_pinned()
+            existing_names = set(items_to_add)
+            for name in reversed(pinned):
+                if name not in existing_names:
+                    continue
+                items = self.listWidgetLeft.findItems(name, Qt.MatchFlag.MatchExactly)
+                if items:
+                    item = items[0]
+                    row = self.listWidgetLeft.row(item)
+                    if row != 0:
+                        taken = self.listWidgetLeft.takeItem(row)
+                        self.listWidgetLeft.insertItem(0, taken)
+
+            valid_pinned = [name for name in pinned if name in existing_names]
+            if len(valid_pinned) != len(pinned):
+                self.listWidgetLeft._write_pinned(valid_pinned)
+
+            self.listWidgetLeft._update_pinned_style()
+            self.append_log(f"The list of trainers has been loaded.")
+        except Exception as e:
+            self.append_log(f"An unexpected error occurred: {str(e)}", "error")
+            
     def getTrainersData(self):
+        """获取修改器数据"""
         global trainers_data
         trainers_data = []
         try:
@@ -289,9 +334,9 @@ class MainWindow(QMainWindow):
                             }
                         trainers_data.append(trainer_dict)
             self.trainers_data = trainers_data
-            self.append_output_text(f"<span style='color:LightGreen;'>[info]</span> Data for all trainers has been loaded.")
+            self.append_log(f"Data for all trainers has been loaded.")
         except Exception as e:
-            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.append_log(f"An unexpected error occurred: {str(e)}", "error")
     
     def onLineEdit1TextChanged(self, text):
         self.listWidgetLeft.clear()
@@ -307,10 +352,11 @@ class MainWindow(QMainWindow):
             else:
                 self.loadTrainers()
         except Exception as e:
-            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.append_log(f"An unexpected error occurred: {str(e)}", "error")
 
     
     def read_abbreviation_from_csv(self, file_path):
+        """获取修改器别名数据"""
         abbreviation = {}
         with open(file_path, 'r', encoding='utf-8') as csvfile:
             reader = csv.reader(csvfile)
@@ -347,7 +393,7 @@ class MainWindow(QMainWindow):
             else:
                 self.listWidgetRight.clear()
         except Exception as e:
-            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.append_log(f"An unexpected error occurred: {str(e)}", "error")
 
     def lineEdit3_keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:
@@ -375,9 +421,9 @@ class MainWindow(QMainWindow):
                     if game['en_name'] and game['en_name'] != game_name:
                         game_name += f" ({game['en_name']})"
                     self.listWidgetName.addItem(game_name)
-            self.append_output_text(f"<span style='color:LightGreen;'>[success]</span> Query results have been obtained.")
+            self.append_log(f"Query results have been obtained.", "success")
         except Exception as e:
-            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.append_log(f"An unexpected error occurred: {str(e)}", "error")
 
     def updateData(self, need_confirm):
         if need_confirm:
@@ -393,8 +439,9 @@ class MainWindow(QMainWindow):
         if (need_confirm and msg_box.clickedButton() == btn_yes) or not need_confirm:
             self.output_text_edit.show()
             update = UpdateDataRunnable(need_confirm)
-            update.signals.update_signal.connect(self.append_output_text)
+            update.signals.update_signal.connect(self.append_log)
             update.signals.finished.connect(self.updateMessage)
+            update.signals.restart_signal.connect(self.restartApplication)
             self.threadpool.start(update)
 
     def updateMessage(self, type, title, text):
@@ -405,6 +452,10 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, title, text)
         self.toggle_output_area(config.get('settings', 'debugMode') == 'true')
 
+    def restartApplication(self):
+        QProcess.startDetached(sys.executable, sys.argv)
+        sys.exit(0)
+
     def toggle_output_area(self, visible):
         if visible:
             self.output_text_edit.show()
@@ -412,6 +463,7 @@ class MainWindow(QMainWindow):
             self.output_text_edit.hide()
 
     def importFiles(self):
+        self.stopDownloadMonitor()
         try:
             options = QFileDialog.Option.ReadOnly
             files, _ = QFileDialog.getOpenFileNames(self, tr("选择修改器文件"), "", "Executable Files (*.exe)", options=options)
@@ -426,25 +478,26 @@ class MainWindow(QMainWindow):
                     target_path = os.path.join(target_dir, file_name)
                     try:
                         shutil.copy(file_path, target_path)
-                        self.append_output_text(f"<span style='color:green;'>[import]</span> {target_path}")
+                        self.append_log(f"{target_path}", "import")
                     except Exception as e:
-                        self.append_output_text(f"<span style='color:red;'>[error]</span> Failed to copy file '{file_name}': {str(e)}")
+                        self.append_log(f"Failed to copy file '{file_name}': {str(e)}", "error")
                 self.loadTrainers()
-                self.append_output_text(f"<span style='color:LightGreen;'>[success]</span> File imported successfully!")
+                self.append_log(f"File imported successfully!", "success")
         except Exception as e:
-            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.append_log(f"An unexpected error occurred: {str(e)}", "error")
 
     def openDirectory(self):
         try:
             if os.path.exists(self.trainersPath) and os.path.isdir(self.trainersPath):
                 os.startfile(self.trainersPath)
-                self.append_output_text(f"<span style='color:LightSkyBlue;'>[open]</span> {self.trainersPath}")
+                self.append_log(f"{self.trainersPath}", "open")
             else:
-                self.append_output_text(f"<span style='color:red;'>[error]</span> '{self.trainersPath}' does not exist.")
+                self.append_log(f"'{self.trainersPath}' does not exist.", "error")
         except Exception as e:
-            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.append_log(f"An unexpected error occurred: {str(e)}", "error")
 
     def importZipFiles(self):
+        self.stopDownloadMonitor()
         files, _ = QFileDialog.getOpenFileNames(self, tr("选择压缩包文件"), "", tr("压缩包 (*.zip *.rar)"))
         if files:
             cache_dir = os.path.join(os.getcwd(), 'cache')
@@ -464,20 +517,20 @@ class MainWindow(QMainWindow):
                         with rarfile.RarFile(fileName, 'r') as rar_ref:
                             rar_ref.extractall(cache_dir)
                     else:
-                        self.append_output_text(f"<span style='color:red;'>[error]</span> File format error.")
+                        self.append_log(f"File format error.", "error")
                         return
 
                 for root, dirs, files in os.walk(cache_dir):
                     for file in files:
                         if file.endswith('.exe'):
                             os.rename(os.path.join(root, file), os.path.join(trainers_dir, file))
-                            self.append_output_text(f"<span style='color:green;'>[import]</span> {os.path.join(trainers_dir, file)}")
+                            self.append_log(f"{os.path.join(trainers_dir, file)}", "import")
 
                 QMessageBox.information(self, tr("导入成功"), tr("<p>已从选择的压缩包导入修改器！</p><p><span style='color:red;'>但请注意，有些修改器可能需要额外的文件才能正确运行。</span></p>"))
-                self.append_output_text(f"<span style='color:LightGreen;'>[success]</span> File imported successfully!")
+                self.append_log(f"File imported successfully!", "success")
                 self.loadTrainers()
             except Exception as e:
-                self.append_output_text(f"<span style='color:red;'>[error]</span> An error occurred while processing the archive: {str(e)}")
+                self.append_log(f"An error occurred while processing the archive: {str(e)}", "error")
                 QMessageBox.critical(self, tr("错误"), tr("处理压缩包时出现错误") + f": {e}")
             finally:
                 for root, dirs, files in os.walk(cache_dir):
@@ -486,15 +539,150 @@ class MainWindow(QMainWindow):
                     for dir in dirs:
                         shutil.rmtree(os.path.join(root, dir))
 
+    def setDownloadDir(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle(tr("设置下载目录"))
+        dialog.setMinimumWidth(500)
+        if themeStyle == 'dark':
+            dialog.setStyleSheet("QDialog { background-color: #1e1e1e; color: #d4d4d4; }")
+        else:
+            dialog.setStyleSheet("QDialog { background-color: #ffffff; color: #333333; }")
+        layout = QVBoxLayout(dialog)
+
+        path_layout = QHBoxLayout()
+        line_edit = QLineEdit(os.path.expandvars(self.download_dir))
+        folder_svg = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="''' + ('#d4d4d4' if themeStyle == 'dark' else '#333333') + '''"><path d="M12.4142 5H21C21.5523 5 22 5.44772 22 6V20C22 20.5523 21.5523 21 21 21H3C2.44772 21 2 20.5523 2 20V4C2 3.44772 2.44772 3 3 3H10.4142L12.4142 5ZM20 11H4V19H20V11ZM20 9V7H11.5858L9.58579 5H4V9H20Z"></path></svg>'''
+        renderer = QSvgRenderer(QByteArray(folder_svg.encode('utf-8')))
+        pixmap = QPixmap(24, 24)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+        browse_btn = QPushButton()
+        browse_btn.setIcon(QIcon(pixmap))
+        browse_btn.setStyleSheet("QPushButton { background: transparent; border: none; padding: 4px; }")
+        browse_btn.clicked.connect(lambda: line_edit.setText(
+            QFileDialog.getExistingDirectory(dialog, tr("选择下载目录"), line_edit.text())))
+        path_layout.addWidget(line_edit)
+        path_layout.addWidget(browse_btn)
+        layout.addLayout(path_layout)
+
+        btn_layout = QHBoxLayout()
+        ok_btn = QPushButton(tr("确定"))
+        cancel_btn = QPushButton(tr("取消"))
+        ok_btn.clicked.connect(dialog.accept)
+        cancel_btn.clicked.connect(dialog.reject)
+        btn_layout.addStretch()
+        btn_layout.addWidget(ok_btn)
+        btn_layout.addWidget(cancel_btn)
+        layout.addLayout(btn_layout)
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.download_dir = line_edit.text()
+            config.set('settings', 'downloaddir', self.download_dir)
+            with open(self.config_path, 'w') as configfile:
+                config.write(configfile)
+            self.append_log(f"Download directory set to: {self.download_dir}", "save")
+
+    def startDownloadMonitor(self, game_name):
+        self.stopDownloadMonitor()
+        download_path = os.path.expandvars(self.download_dir)
+        if not os.path.isdir(download_path):
+            self.append_log(f"Download directory does not exist: {download_path}", "warning")
+            return
+        self._monitor_snapshot = set(os.listdir(download_path))
+        self._monitor_game_name = game_name
+        self._monitor_count = 0
+        self._monitor_timer.start(1000)
+        self.append_log(f"Started monitoring download directory for: {game_name}", "info")
+
+    def stopDownloadMonitor(self):
+        if self._monitor_timer.isActive():
+            self._monitor_timer.stop()
+            self.append_log("Download monitoring stopped.", "info")
+
+    def _autoImportFile(self, file_path, filename):
+        ext = os.path.splitext(filename)[1].lower()
+        trainers_dir = os.path.join(os.getcwd(), 'trainers')
+        os.makedirs(trainers_dir, exist_ok=True)
+
+        if ext == '.exe':
+            target_path = os.path.join(trainers_dir, filename)
+            shutil.copy(file_path, target_path)
+            self.append_log(f"Auto-imported: {filename}", "import")
+            self.loadTrainers()
+            self.append_log(f"Auto-import completed!", "success")
+        elif ext in ('.zip', '.rar'):
+            cache_dir = os.path.join(os.getcwd(), 'cache')
+            os.makedirs(cache_dir, exist_ok=True)
+            unrar_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'utils', 'UnRAR.exe')
+            rarfile.UNRAR_TOOL = unrar_path
+            try:
+                if ext == '.zip':
+                    with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                        zip_ref.extractall(cache_dir)
+                else:
+                    with rarfile.RarFile(file_path, 'r') as rar_ref:
+                        rar_ref.extractall(cache_dir)
+                for root, _, files in os.walk(cache_dir):
+                    for f in files:
+                        if f.endswith('.exe'):
+                            src = os.path.join(root, f)
+                            dst = os.path.join(trainers_dir, f)
+                            shutil.copy(src, dst)
+                            self.append_log(f"Auto-imported: {f}", "import")
+                self.loadTrainers()
+                self.append_log(f"Auto-import completed!", "success")
+            finally:
+                for root, dirs, files in os.walk(cache_dir):
+                    for f in files:
+                        os.remove(os.path.join(root, f))
+                    for d in dirs:
+                        shutil.rmtree(os.path.join(root, d))
+        else:
+            self.append_log(f"Unsupported file type for auto-import: {filename}", "warning")
+
+    def _checkDownloadDir(self):
+        self._monitor_count += 1
+        if self._monitor_count > 300:
+            self._monitor_timer.stop()
+            self.append_log("Download monitoring timed out after 300 seconds.", "warning")
+            return
+
+        download_path = os.path.expandvars(self.download_dir)
+        if not os.path.isdir(download_path):
+            return
+
+        try:
+            current_files = set(os.listdir(download_path))
+        except PermissionError:
+            return
+
+        new_files = current_files - self._monitor_snapshot
+        for filename in new_files:
+            file_path = os.path.join(download_path, filename)
+            if not os.path.isfile(file_path):
+                continue
+            if filename.lower().endswith(('.crdownload', '.part', '.tmp')):
+                continue
+            name_only = os.path.splitext(filename)[0]
+            extracted = extract_game_name(name_only)
+            sim = similarity(extracted, self._monitor_game_name)
+            if sim > 0.8:
+                self.append_log(f"Detected new file: {filename} (similarity: {sim:.2f})", "info")
+                self._autoImportFile(file_path, filename)
+                self._monitor_timer.stop()
+                return
+
     def openCsvFile(self, file_path):
         try:
             if os.path.exists(file_path):
-                self.append_output_text(f"<span style='color:LightSkyBlue;'>[open]</span> {file_path}")
+                self.append_log(f"{file_path}", "open")
                 QProcess.startDetached('notepad', [file_path]) 
             else:
-                self.append_output_text(f"<span style='color:red;'>[error]</span> '{file_path}' cannot be found.")
+                self.append_log(f"'{file_path}' cannot be found.", "error")
         except Exception as e:
-            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.append_log(f"An unexpected error occurred: {str(e)}", "error")
 
     def switchUI(self):
         action = self.sender()
@@ -504,7 +692,8 @@ class MainWindow(QMainWindow):
             config.set('settings', 'enableEnglishUI', 'false')
         with open(self.config_path, 'w') as configfile:
             config.write(configfile)
-        os.execl(sys.executable, sys.executable, *sys.argv)
+        QProcess.startDetached(sys.executable, sys.argv)
+        sys.exit(0)
         
     def switchTheme(self):
         if themeStyle == "dark":
@@ -513,7 +702,17 @@ class MainWindow(QMainWindow):
             config.set('settings', 'themestyle', 'dark')
         with open(self.config_path, 'w') as configfile:
             config.write(configfile)
-        os.execl(sys.executable, sys.executable, *sys.argv)
+        QProcess.startDetached(sys.executable, sys.argv)
+        sys.exit(0)
+
+    def toggleDebugMode(self):
+        action = self.sender()
+        is_debug = action.text() == tr("关闭Debug模式")
+        config.set('settings', 'debugMode', str(not is_debug).lower())
+        with open(self.config_path, 'w') as configfile:
+            config.write(configfile)
+        action.setText(tr("Debug模式") if is_debug else tr("关闭Debug模式"))
+        self.output_text_edit.setVisible(not is_debug)
 
     def downloadTool(self):
         action = self.sender()
@@ -573,12 +772,12 @@ class MainWindow(QMainWindow):
                             new_file_name = f"{best_match['zh_name']}{name_suffix}.exe"
                             new_file_path = os.path.join(self.trainersPath, new_file_name)
                             os.rename(file_path, new_file_path)
-                            self.append_output_text(f"<span style='color:LightSkyBlue;'>[rename]</span> '{file_name}' -> '{new_file_name}'")
+                            self.append_log(f"'{file_name}' -> '{new_file_name}'", "rename")
                         else:
-                            self.append_output_text(f"<span style='color:red;'>[rename]</span> No match found for '{file_name}'")
-                self.append_output_text(f"<span style='color:LightGreen;'>[success]</span> File names translation completed!")
+                            self.append_log(f"No match found for '{file_name}'", "error")
+                self.append_log(f"File names translation completed!", "success")
         except Exception as e:
-            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.append_log(f"An unexpected error occurred: {str(e)}", "error")
         finally:
             self.loadTrainers()
 
@@ -618,9 +817,42 @@ class MainWindow(QMainWindow):
     def openUrl(self, url):
         try:
             webbrowser.open(url)
-            self.append_output_text(f"<span style='color:LightSkyBlue;'>[open]</span> {url}")
+            self.append_log(f"{url}", "open")
         except Exception as e:
-            self.append_output_text(f"<span style='color:red;'>[error]</span> An unexpected error occurred: {str(e)}")
+            self.append_log(f"An unexpected error occurred: {str(e)}", "error")
 
-    def append_output_text(self, text):
-        self.output_text_edit.appendHtml(text)
+    def append_log(self, text, tag="info", color=None):
+        """
+        输出日志
+
+        参数:
+            text (str): 日志文本内容。
+            tag (str, optional): 信息类型标签，默认为"info"。
+                常见标签包括:
+                - "info": 普通信息 (颜色: LightGreen)
+                - "success": 成功信息 (颜色: LightGreen)
+                - "warning": 警告信息 (颜色: yellow)
+                - "error": 错误信息 (颜色: red)
+                - "download": 下载操作相关信息 (颜色: yellow)
+                - "save": 保存操作相关信息 (颜色: yellow)
+                - "import": 导入操作相关信息 (颜色: green)
+                - "open": 打开操作相关信息 (颜色: LightSkyBlue)
+                - "rename": 重命名操作相关信息 (颜色: LightSkyBlue)
+                - "delete": 删除操作相关信息 (颜色: LightSkyBlue)
+            color (str, optional): 指定文本颜色，如果提供则覆盖标签对应的颜色。
+        """
+        tag_colors = {
+            "info": "LightGreen",
+            "success": "LightGreen",
+            "warning": "yellow",
+            "error": "red",
+            "download": "yellow",
+            "save": "yellow",
+            "import": "green",
+            "open": "LightSkyBlue",
+            "rename": "LightSkyBlue",
+            "delete": "LightSkyBlue"
+        }
+        if not color:
+            color = tag_colors.get(tag, "LightGreen")
+        self.output_text_edit.appendHtml(f"<span style='color:{color};'>[{tag}]</span> {text}")

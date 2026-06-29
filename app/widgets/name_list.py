@@ -1,5 +1,5 @@
-from PyQt6.QtWidgets import QListWidget, QMenu
-from PyQt6.QtGui import QGuiApplication
+from PySide6.QtWidgets import QListWidget, QMenu
+from PySide6.QtGui import QGuiApplication
 from app.config import *
 from app.utils.helpers import *
 
